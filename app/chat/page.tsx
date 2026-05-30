@@ -1,3 +1,4 @@
+cat > /home/claude/lifeos/app/chat/page.tsx << 'ENDOFFILE'
 'use client'
 import { useEffect, useRef, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
@@ -16,10 +17,13 @@ function detectLayer(text: string): number | null {
   return null
 }
 
-function parseStateMap(raw: string) {
+type Priority = { n: string; name: string; why: string; step: string }
+type StateMapData = { sections: Record<string, string>; priorities: Priority[]; nextStep: string }
+
+function parseStateMap(raw: string): StateMapData {
   const lines = raw.split('\n').map(l => l.trim()).filter(Boolean)
-  const result: Record<string, string> = {}
-  const priorities: { n: string; name: string; why: string; step: string }[] = []
+  const sections: Record<string, string> = {}
+  const priorities: Priority[] = []
   let nextStep = ''
   let curKey = ''
   let curVal = ''
@@ -33,7 +37,7 @@ function parseStateMap(raw: string) {
   }
 
   function flush() {
-    if (curKey && curVal.trim()) result[curKey] = curVal.trim()
+    if (curKey && curVal.trim()) sections[curKey] = curVal.trim()
     curVal = ''
   }
 
@@ -56,14 +60,13 @@ function parseStateMap(raw: string) {
     if (!hit && curKey) curVal += (curVal ? '\n' : '') + line
   })
   flush()
-  return { ...result, priorities, nextStep }
+  return { sections, priorities, nextStep }
 }
 
 function StateMapCard({ raw }: { raw: string }) {
-  const d = parseStateMap(raw)
-  const pris = d.priorities as { n: string; name: string; why: string; step: string }[]
+  const { sections, priorities, nextStep } = parseStateMap(raw)
 
-  const sections = [
+  const sectionList = [
     { key: 'overview', label: 'Общая картина' },
     { key: 'working', label: 'Что работает ✓' },
     { key: 'attention', label: 'Что требует внимания ◎' },
@@ -92,15 +95,15 @@ function StateMapCard({ raw }: { raw: string }) {
         🧬 State Map — {new Date().toLocaleDateString('ru', { day: 'numeric', month: 'long', year: 'numeric' })}
       </div>
 
-      {sections.map(({ key, label }) => d[key] ? (
+      {sectionList.map(({ key, label }) => sections[key] ? (
         <div key={key} style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--text-dim)', marginBottom: 6 }}>
             {label}
           </div>
           <div style={{ color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
-            {(d[key] as string).split('•').filter(Boolean).map((item, i) => (
+            {sections[key].split('•').filter(Boolean).map((item, i) => (
               <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 3 }}>
-                {i > 0 || (d[key] as string).startsWith('•') ? <span style={{ color: 'var(--accent)', flexShrink: 0 }}>•</span> : null}
+                {(i > 0 || sections[key].startsWith('•')) && <span style={{ color: 'var(--accent)', flexShrink: 0 }}>•</span>}
                 <span>{item.trim()}</span>
               </div>
             ))}
@@ -108,12 +111,12 @@ function StateMapCard({ raw }: { raw: string }) {
         </div>
       ) : null)}
 
-      {pris.length > 0 && (
+      {priorities.length > 0 && (
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--text-dim)', marginBottom: 10 }}>
             Фокус на 2–3 месяца
           </div>
-          {pris.map(p => (
+          {priorities.map(p => (
             <div key={p.n} style={{
               background: 'var(--surface2)',
               border: '1px solid var(--border)',
@@ -132,7 +135,7 @@ function StateMapCard({ raw }: { raw: string }) {
         </div>
       )}
 
-      {d.nextStep && (
+      {nextStep && (
         <div style={{
           background: 'var(--accent-dim)',
           border: '1px solid var(--accent-border)',
@@ -141,7 +144,7 @@ function StateMapCard({ raw }: { raw: string }) {
           fontSize: 13,
           color: 'var(--accent)',
         }}>
-          → {d.nextStep as string}
+          → {nextStep}
         </div>
       )}
     </div>
@@ -224,8 +227,6 @@ function ChatContent() {
 
   return (
     <div style={{ display: 'flex', height: '100vh', flexDirection: 'column' }}>
-
-      {/* Header */}
       <header style={{
         padding: '16px 24px',
         borderBottom: '1px solid var(--border)',
@@ -238,7 +239,6 @@ function ChatContent() {
           <span style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, color: 'var(--accent)' }}>Life OS</span>
           <span style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Диагностика</span>
         </div>
-        {/* Progress */}
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           {LAYERS.map((l, i) => (
             <div key={l.id} style={{
@@ -254,8 +254,6 @@ function ChatContent() {
       </header>
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-
-        {/* Sidebar */}
         <aside style={{
           width: 200,
           borderRight: '1px solid var(--border)',
@@ -294,36 +292,29 @@ function ChatContent() {
           ))}
         </aside>
 
-        {/* Messages */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <div style={{ flex: 1, overflowY: 'auto', padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 20 }}>
-
             {messages.map((msg, i) => {
               const hasMap = msg.role === 'assistant' && msg.content.includes('[STATE_MAP_START]')
               const preText = hasMap ? msg.content.split('[STATE_MAP_START]')[0].trim() : msg.content
-              const mapRaw = hasMap ? msg.content.split('[STATE_MAP_START]')[1]?.split('[STATE_MAP_END]')[0]?.trim() : ''
+              const mapRaw = hasMap ? (msg.content.split('[STATE_MAP_START]')[1]?.split('[STATE_MAP_END]')[0]?.trim() ?? '') : ''
 
               return (
                 <div key={i} style={{
                   display: 'flex',
                   gap: 12,
                   flexDirection: msg.role === 'user' ? 'row-reverse' : 'row',
-                  animation: 'fadeUp 0.3s forwards',
                 }}>
-                  <style>{`@keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }`}</style>
-
-                  {/* Avatar */}
                   <div style={{
                     width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 11, fontWeight: 500, marginTop: 2,
-                    background: msg.role === 'ai' ? 'var(--surface2)' : 'var(--info)',
-                    border: `1px solid ${msg.role === 'ai' ? 'var(--border)' : 'var(--info-border)'}`,
-                    color: msg.role === 'ai' ? 'var(--text-dim)' : 'var(--info-text)',
+                    background: msg.role === 'assistant' ? 'var(--surface2)' : 'var(--info)',
+                    border: `1px solid ${msg.role === 'assistant' ? 'var(--border)' : 'var(--info-border)'}`,
+                    color: msg.role === 'assistant' ? 'var(--text-dim)' : 'var(--info-text)',
                   }}>
                     {msg.role === 'assistant' ? 'L' : 'Я'}
                   </div>
-
                   <div style={{ maxWidth: 580 }}>
                     {preText && (
                       <div style={{
@@ -350,7 +341,6 @@ function ChatContent() {
               )
             })}
 
-            {/* Typing */}
             {loading && (
               <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                 <div style={{
@@ -378,7 +368,6 @@ function ChatContent() {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Input */}
           <div style={{
             padding: '16px 24px',
             borderTop: '1px solid var(--border)',
@@ -452,3 +441,7 @@ export default function ChatPage() {
     </Suspense>
   )
 }
+ENDOFFILE
+Output
+
+exit code 0
