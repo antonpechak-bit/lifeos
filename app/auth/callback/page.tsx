@@ -9,39 +9,40 @@ export default function AuthCallback() {
   const [status, setStatus] = useState('Входим...')
 
   useEffect(() => {
-    async function handle() {
-      // Ждём немного чтобы Supabase обработал токен из URL
-      await new Promise(r => setTimeout(r, 1000))
-      
-      const { data, error } = await supabase.auth.getSession()
-      
-      if (data?.session) {
-        setStatus('Готово!')
+    // Слушаем событие входа
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session) {
+        subscription.unsubscribe()
         router.push('/dashboard')
-        return
       }
+    })
 
-      // Попробуем ещё раз через 2 секунды
-      await new Promise(r => setTimeout(r, 2000))
-      const { data: data2 } = await supabase.auth.getSession()
-      
-      if (data2?.session) {
+    // Параллельно проверяем есть ли уже сессия
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) {
+        subscription.unsubscribe()
         router.push('/dashboard')
-      } else {
-        setStatus('Не удалось войти. Попробуй ещё раз.')
-        await new Promise(r => setTimeout(r, 2000))
-        router.push('/')
       }
+    })
+
+    // Таймаут — если через 5 сек ничего не произошло
+    const timeout = setTimeout(() => {
+      setStatus('Перенаправляем...')
+      router.push('/')
+    }, 5000)
+
+    return () => {
+      subscription.unsubscribe()
+      clearTimeout(timeout)
     }
-    
-    handle()
   }, [])
 
   return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center' }}>
       <div style={{ textAlign:'center' }}>
         <div style={{ fontFamily:"'Playfair Display',serif", fontSize:48, opacity:0.3, marginBottom:16 }}>◎</div>
-        <div style={{ fontSize:14, color:'var(--text-dim,#7a7870)' }}>{status}</div>
+        <div style={{ fontSize:14, color:'var(--text-dim,#7a7870)', marginBottom:8 }}>{status}</div>
+        <div style={{ fontSize:12, color:'var(--text-muted,#3d3d3d)' }}>Это займёт секунду</div>
       </div>
     </div>
   )
