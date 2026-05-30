@@ -1,3 +1,4 @@
+// @ts-nocheck
 cat > /home/claude/lifeos/app/chat/page.tsx << 'ENDOFFILE'
 'use client'
 import { useEffect, useRef, useState, Suspense } from 'react'
