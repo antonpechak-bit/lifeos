@@ -1,156 +1,101 @@
+// @ts-nocheck
 'use client'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { OPENING_MESSAGE } from '@/lib/prompts'
-import { useState } from 'react'
 
 export default function Home() {
   const router = useRouter()
   const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
+  const [sent, setSent] = useState(false)
+  const [checking, setChecking] = useState(true)
 
-  async function start() {
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) router.push('/dashboard')
+      else setChecking(false)
+    })
+  }, [])
+
+  async function handleSubmit() {
+    if (!email.trim()) return
     setLoading(true)
-    const { data, error } = await supabase
-      .from('sessions')
-      .insert({
-        user_name: name || null,
-        messages: [{ role: 'assistant', content: OPENING_MESSAGE }],
-        current_layer: 0,
-        completed: false,
-      })
-      .select('id')
-      .single()
-
-    if (error || !data) {
-      console.error(error)
-      setLoading(false)
-      return
-    }
-    router.push(`/chat?session=${data.id}`)
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email.trim(),
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        data: { name: name.trim() || null }
+      }
+    })
+    setLoading(false)
+    if (!error) setSent(true)
   }
 
+  if (checking) return null
+
   return (
-    <main style={{
-      minHeight: '100vh',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '40px 20px',
-    }}>
-      {/* Glyph */}
-      <div style={{
-        fontFamily: "'Playfair Display', serif",
-        fontStyle: 'italic',
-        fontSize: 80,
-        color: 'var(--accent)',
-        opacity: 0.25,
-        lineHeight: 1,
-        marginBottom: 32,
-        animation: 'float 6s ease-in-out infinite',
-      }}>◎</div>
+    <main style={{ minHeight:'100vh', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'40px 20px' }}>
+      <style>{`@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}} @keyframes fadeIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}`}</style>
 
-      <style>{`
-        @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
-        @keyframes fadeIn { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
-      `}</style>
+      <div style={{ fontFamily:"'Playfair Display',serif", fontStyle:'italic', fontSize:72, color:'var(--accent,#c8b89a)', opacity:0.25, lineHeight:1, marginBottom:32, animation:'float 6s ease-in-out infinite' }}>◎</div>
 
-      <div style={{ animation: 'fadeIn 0.6s forwards', textAlign: 'center', maxWidth: 480 }}>
-        <h1 style={{
-          fontFamily: "'Playfair Display', serif",
-          fontSize: 36,
-          fontWeight: 400,
-          lineHeight: 1.25,
-          marginBottom: 16,
-        }}>
-          Карта твоего<br />
-          <em style={{ color: 'var(--accent)' }}>состояния</em>
+      <div style={{ animation:'fadeIn 0.6s forwards', textAlign:'center', maxWidth:480, width:'100%' }}>
+        <h1 style={{ fontFamily:"'Playfair Display',serif", fontSize:34, fontWeight:400, lineHeight:1.25, marginBottom:14, color:'var(--text,#e8e6e0)' }}>
+          Карта твоего<br/><em style={{ color:'var(--accent,#c8b89a)' }}>состояния</em>
         </h1>
-
-        <p style={{
-          fontSize: 15,
-          color: 'var(--text-dim)',
-          lineHeight: 1.8,
-          marginBottom: 40,
-        }}>
-          Разговор с ИИ, который помогает увидеть себя как целостную систему.
-          Где есть ресурс. Где дефицит. Что сделать фокусом на ближайшие месяцы.
+        <p style={{ fontSize:15, color:'var(--text-dim,#7a7870)', lineHeight:1.8, marginBottom:36 }}>
+          Разговор с ИИ, который помогает увидеть себя как целостную систему. Где ресурс. Где дефицит. Что сделать фокусом.
         </p>
 
-        {/* Meta */}
-        <div style={{
-          display: 'flex',
-          justifyContent: 'center',
-          gap: 40,
-          marginBottom: 40,
-        }}>
-          {[['7', 'слоёв'], ['40–50', 'минут'], ['1', 'State Map']].map(([n, l]) => (
-            <div key={l} style={{ textAlign: 'center' }}>
-              <div style={{
-                fontFamily: "'Playfair Display', serif",
-                fontSize: 26,
-                color: 'var(--accent)',
-              }}>{n}</div>
-              <div style={{
-                fontSize: 11,
-                color: 'var(--text-muted)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.1em',
-                marginTop: 4,
-              }}>{l}</div>
+        <div style={{ display:'flex', justifyContent:'center', gap:40, marginBottom:40 }}>
+          {[['7','слоёв'],['40–50','минут'],['1','State Map']].map(([n,l]) => (
+            <div key={l} style={{ textAlign:'center' }}>
+              <div style={{ fontFamily:"'Playfair Display',serif", fontSize:26, color:'var(--accent,#c8b89a)' }}>{n}</div>
+              <div style={{ fontSize:11, color:'var(--text-muted,#3d3d3d)', textTransform:'uppercase', letterSpacing:'0.1em', marginTop:4 }}>{l}</div>
             </div>
           ))}
         </div>
 
-        {/* Name input */}
-        <input
-          type="text"
-          placeholder="Твоё имя (необязательно)"
-          value={name}
-          onChange={e => setName(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && start()}
-          style={{
-            width: '100%',
-            maxWidth: 320,
-            background: 'var(--surface)',
-            border: '1px solid var(--border2)',
-            borderRadius: 12,
-            padding: '12px 16px',
-            color: 'var(--text)',
-            fontFamily: "'DM Sans', sans-serif",
-            fontSize: 14,
-            outline: 'none',
-            marginBottom: 16,
-            display: 'block',
-            marginLeft: 'auto',
-            marginRight: 'auto',
-          }}
-        />
-
-        <button
-          onClick={start}
-          disabled={loading}
-          style={{
-            background: loading ? 'var(--surface2)' : 'var(--accent)',
-            color: loading ? 'var(--text-muted)' : 'var(--bg)',
-            border: 'none',
-            borderRadius: 100,
-            padding: '13px 40px',
-            fontFamily: "'DM Sans', sans-serif",
-            fontSize: 14,
-            fontWeight: 500,
-            cursor: loading ? 'not-allowed' : 'pointer',
-            transition: 'all 0.2s',
-            letterSpacing: '0.03em',
-          }}
-        >
-          {loading ? 'Создаём сессию...' : 'Начать диагностику'}
-        </button>
-
-        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 20 }}>
-          Нет правильных ответов. Чем честнее — тем точнее карта.
-        </p>
+        {sent ? (
+          <div style={{ background:'var(--surface,#141416)', border:'1px solid rgba(200,184,154,0.2)', borderRadius:16, padding:'28px 24px', textAlign:'center' }}>
+            <div style={{ fontSize:32, marginBottom:12 }}>✉️</div>
+            <div style={{ fontSize:16, fontWeight:500, color:'var(--text,#e8e6e0)', marginBottom:8 }}>Проверь почту</div>
+            <div style={{ fontSize:14, color:'var(--text-dim,#7a7870)', lineHeight:1.7 }}>
+              Отправили ссылку на <strong>{email}</strong>.<br/>
+              Кликни по ней — и окажешься внутри.
+            </div>
+          </div>
+        ) : (
+          <div style={{ maxWidth:360, margin:'0 auto' }}>
+            <input
+              type="text"
+              placeholder="Твоё имя (необязательно)"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              style={{ width:'100%', background:'var(--surface,#141416)', border:'1px solid rgba(255,255,255,0.12)', borderRadius:12, padding:'12px 16px', color:'var(--text,#e8e6e0)', fontFamily:"'DM Sans',sans-serif", fontSize:14, outline:'none', marginBottom:10, boxSizing:'border-box' }}
+            />
+            <input
+              type="email"
+              placeholder="Твой email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+              style={{ width:'100%', background:'var(--surface,#141416)', border:'1px solid rgba(255,255,255,0.12)', borderRadius:12, padding:'12px 16px', color:'var(--text,#e8e6e0)', fontFamily:"'DM Sans',sans-serif", fontSize:14, outline:'none', marginBottom:16, boxSizing:'border-box' }}
+            />
+            <button
+              onClick={handleSubmit}
+              disabled={loading || !email.trim()}
+              style={{ width:'100%', background:loading||!email.trim()?'var(--surface2,#1a1a1e)':'var(--accent,#c8b89a)', color:loading||!email.trim()?'var(--text-muted,#3d3d3d)':'var(--bg,#0d0d0f)', border:'none', borderRadius:100, padding:'13px 40px', fontFamily:"'DM Sans',sans-serif", fontSize:14, fontWeight:500, cursor:loading||!email.trim()?'not-allowed':'pointer', transition:'all 0.2s' }}
+            >
+              {loading ? 'Отправляем...' : 'Получить ссылку на почту'}
+            </button>
+            <p style={{ fontSize:12, color:'var(--text-muted,#3d3d3d)', marginTop:14 }}>
+              Без пароля. Просто кликни по ссылке в письме.
+            </p>
+          </div>
+        )}
       </div>
     </main>
   )
