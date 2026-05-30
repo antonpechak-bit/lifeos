@@ -1,4 +1,4 @@
-// @ts-nocheck
+
 'use client'
 import { useEffect, useRef, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
@@ -334,6 +334,13 @@ function ChatContent() {
                     {hasMap && mapRaw && (
                       <div style={{ marginTop: preText ? 12 : 0 }}>
                         <StateMapCard raw={mapRaw} />
+                        <div style={{ marginTop: 14 }}>
+                          <button
+                            onClick={() => { const url = sessionId ? `/dashboard/priorities?session=${sessionId}` : '/dashboard/priorities'; window.location.href = url }}
+                            style={{ width:'100%', padding:'11px 20px', borderRadius:12, background:'var(--accent,#c8b89a)', color:'var(--bg,#0d0d0f)', border:'none', fontFamily:"'DM Sans',sans-serif", fontSize:13, fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+                            Открыть карту приоритетов →
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
