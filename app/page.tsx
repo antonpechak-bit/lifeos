@@ -23,9 +23,9 @@ export default function Home() {
     if (!email.trim()) return
     setLoading(true)
     const { error } = await supabase.auth.signInWithOtp({
-      email: email.trim(),
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+  email: email.trim(),
+  options: {
+    emailRedirectTo: `https://lifeos-gold-chi.vercel.app/auth/callback`,
         data: { name: name.trim() || null }
       }
     })
