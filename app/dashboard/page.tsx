@@ -208,6 +208,9 @@ export default function Dashboard() {
                   <button onClick={() => router.push('/dashboard/insights')} style={{ flex:1, padding:'13px', borderRadius:12, background:s.surface, border:`1px solid ${s.border}`, color:s.dim, fontSize:13, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
                     📊
                   </button>
+                  <button onClick={() => router.push('/checkups')} style={{ flex:1, padding:'13px', borderRadius:12, background:s.surface, border:`1px solid ${s.border}`, color:s.dim, fontSize:13, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }} title="Чекапы">
+                    🩺
+                  </button>
                 </div>
 
                 {/* Today wellbeing */}
