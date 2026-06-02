@@ -345,3 +345,4 @@ function CheckinContent() {
 export default function CheckinPage() {
   return <Suspense><CheckinContent /></Suspense>
 }
+
