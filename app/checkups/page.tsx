@@ -1,6 +1,6 @@
 // @ts-nocheck
 'use client'
-import { useEffect, useState, Suspense } from 'react'
+import { useEffect, useState, useRef, Suspense } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
@@ -188,6 +188,9 @@ function CheckupsContent() {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [infoField, setInfoField] = useState(null)
   const [tab, setTab] = useState('input')
+  const [uploading, setUploading] = useState(false)
+  const [uploadResult, setUploadResult] = useState(null)
+  const fileInputRef = useRef(null)
 
   useEffect(() => {
     async function load() {
@@ -206,6 +209,45 @@ function CheckupsContent() {
     }
     load()
   }, [])
+
+  async function handleUpload(file) {
+    if (!file) return
+    setUploading(true)
+    setUploadResult(null)
+    try {
+      const reader = new FileReader()
+      reader.onload = async (e) => {
+        const base64 = e.target.result.split(',')[1]
+        const mediaType = file.type || 'image/jpeg'
+        const res = await fetch('/api/parse-labs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imageBase64: base64, mediaType }),
+        })
+        const data = await res.json()
+        if (data.found && data.count > 0) {
+          // Auto-fill found values
+          setValues(prev => {
+            const updated = { ...prev }
+            Object.entries(data.found).forEach(([key, val]) => {
+              if (val !== null) updated[key] = String(val)
+            })
+            return updated
+          })
+          if (data.lab_name) setLabName(data.lab_name)
+          if (data.date) setDate(data.date)
+          setUploadResult({ success: true, count: data.count, text: data.raw_text })
+        } else {
+          setUploadResult({ success: false, text: 'Не удалось распознать показатели. Попробуй другое фото.' })
+        }
+        setUploading(false)
+      }
+      reader.readAsDataURL(file)
+    } catch(e) {
+      setUploadResult({ success: false, text: 'Ошибка при обработке изображения.' })
+      setUploading(false)
+    }
+  }
 
   async function save() {
     if (!user) return
@@ -231,7 +273,7 @@ function CheckupsContent() {
 
   return (
     <div style={{ minHeight:'100vh', background:s.bg, color:s.text, fontFamily:"'DM Sans',sans-serif", fontWeight:300, paddingBottom:80 }}>
-      <style>{`@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      <style>{`@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}} @keyframes spin{to{transform:rotate(360deg)}}`}</style>
 
       {infoField && <PrismModal field={infoField} onClose={() => setInfoField(null)} />}
 
@@ -275,6 +317,37 @@ function CheckupsContent() {
                   <div style={{ fontSize:11, color:s.muted, marginBottom:6 }}>Лаборатория</div>
                   <input value={labName} onChange={e => setLabName(e.target.value)} placeholder="Инвитро, Гемотест..." style={{ width:'100%', background:s.surface2, border:`1px solid ${s.border}`, borderRadius:8, padding:'8px 10px', color:s.text, fontSize:13, outline:'none', boxSizing:'border-box' }} />
                 </div>
+              </div>
+            </div>
+
+            {/* Upload photo */}
+            <div style={{ background:s.surface, border:`1px solid ${s.border}`, borderRadius:14, padding:'16px' }}>
+              <div style={{ fontSize:11, color:s.muted, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:12 }}>📸 Загрузить фото анализов</div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*,.pdf"
+                style={{ display:'none' }}
+                onChange={e => e.target.files?.[0] && handleUpload(e.target.files[0])}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                style={{ width:'100%', padding:'12px', borderRadius:10, background: uploading ? s.surface2 : 'rgba(110,168,200,0.1)', border:`1px solid ${uploading ? s.border : 'rgba(110,168,200,0.25)'}`, color: uploading ? s.muted : '#6ea8c8', fontSize:13, cursor: uploading ? 'not-allowed' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8, transition:'all 0.2s' }}
+              >
+                {uploading ? (
+                  <><span style={{ animation:'spin 1s linear infinite', display:'inline-block' }}>◌</span> Распознаю показатели...</>
+                ) : (
+                  <><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Загрузить фото или PDF</>
+                )}
+              </button>
+              {uploadResult && (
+                <div style={{ marginTop:10, padding:'10px 12px', borderRadius:10, background: uploadResult.success ? 'rgba(122,184,122,0.08)' : 'rgba(224,112,112,0.08)', border:`1px solid ${uploadResult.success ? 'rgba(122,184,122,0.25)' : 'rgba(224,112,112,0.2)'}`, fontSize:12, color: uploadResult.success ? s.green : s.red, lineHeight:1.6 }}>
+                  {uploadResult.success ? `✓ Найдено ${uploadResult.count} показателей. ` : ''}{uploadResult.text}
+                </div>
+              )}
+              <div style={{ marginTop:8, fontSize:11, color:s.muted, lineHeight:1.6 }}>
+                Сфотографируй бланк с результатами — ИИ автоматически распознает показатели и заполнит форму. Проверь и скорректируй при необходимости.
               </div>
             </div>
 
