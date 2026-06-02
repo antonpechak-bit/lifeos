@@ -124,6 +124,14 @@ export default function Dashboard() {
 
             {tab === 'sprints' && (
               <div>
+                <div style={{ display:'flex', gap:8, marginBottom:20 }}>
+  <button onClick={() => router.push('/checkin')} style={{ flex:1, padding:'11px', borderRadius:12, background:'rgba(200,184,154,0.1)', border:'1px solid rgba(200,184,154,0.25)', color:'var(--accent,#c8b89a)', fontSize:13, fontWeight:500, cursor:'pointer' }}>
+    ⚡ Чекин сегодня
+  </button>
+  <button onClick={() => router.push('/dashboard/insights')} style={{ flex:1, padding:'11px', borderRadius:12, background:'var(--surface,#141416)', border:'1px solid var(--border,rgba(255,255,255,0.07))', color:'var(--text-dim,#7a7870)', fontSize:13, cursor:'pointer' }}>
+    📊 Аналитика
+  </button>
+</div>
                 {activeSprints.length === 0 ? (
                   <div style={{ textAlign:'center', padding:'40px 20px', border:'1px dashed var(--border,rgba(255,255,255,0.07))', borderRadius:16 }}>
                     <p style={{ fontSize:14, color:'var(--text-dim,#7a7870)', marginBottom:20 }}>Нет активных спринтов. Начни разговор чтобы составить первый.</p>
