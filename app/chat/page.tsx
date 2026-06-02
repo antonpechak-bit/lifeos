@@ -164,8 +164,25 @@ function ChatContent() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  useEffect(() => {
-    if (sessionId && !sessionLoaded) {
+ useEffect(() => {
+  async function init() {
+    // Create session if none
+    if (!sessionId) {
+      const { data: authData } = await supabase.auth.getSession()
+      const userId = authData?.session?.user?.id
+      const { data: newSession } = await supabase.from('sessions').insert({
+        user_id: userId || null,
+        messages: [],
+        current_layer: 0,
+        completed: false,
+      }).select('id').single()
+      if (newSession?.id) {
+        router.replace(`/chat?session=${newSession.id}`)
+      }
+      return
+    }
+
+    if (!sessionLoaded) {
       supabase.from('sessions').select('messages, current_layer').eq('id', sessionId).single()
         .then(({ data }) => {
           if (data?.messages?.length > 0) {
@@ -175,7 +192,9 @@ function ChatContent() {
           setSessionLoaded(true)
         })
     }
-  }, [sessionId, sessionLoaded])
+  }
+  init()
+}, [sessionId, sessionLoaded])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
