@@ -217,7 +217,7 @@ function SprintCard({ sprint, onCheckin }) {
         disabled={todayDone}
         style={{ width:'100%', padding:'9px', borderRadius:10, border:'none', background:todayDone?'rgba(122,184,122,0.15)':'var(--accent,#c8b89a)', color:todayDone?'#7ab87a':'var(--bg,#0d0d0f)', fontSize:13, fontWeight:500, cursor:todayDone?'default':'pointer', transition:'all 0.2s' }}
       >
-        {todayDone ? '✓ Сегодня выполнено' : 'Отметить сегодня'}
+       {todayDone ? '✓ Открыть чекин' : 'Чекин сегодня →'}
       </button>
     </div>
   )
