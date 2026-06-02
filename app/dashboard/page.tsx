@@ -46,35 +46,45 @@ export default function Dashboard() {
   const today = new Date().toISOString().split('T')[0]
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data }) => {
-      if (!data.session) { router.push('/'); return }
-      const u = data.session.user
-      setUser(u)
+    async function load() {
+      try {
+        const { data } = await supabase.auth.getSession()
+        if (!data?.session) { router.push('/'); return }
+        const u = data.session.user
+        setUser(u)
 
-      const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7)
-      const weekStr = weekAgo.toISOString().split('T')[0]
+        const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7)
+        const weekStr = weekAgo.toISOString().split('T')[0]
 
-      const [
-        { data: sess },
-        { data: spr },
-        { data: logs },
-        { data: todayLogData },
-        { data: checkData },
-      ] = await Promise.all([
-        supabase.from('sessions').select('*').eq('user_id', u.id).order('created_at', { ascending: false }),
-        supabase.from('sprints').select('*').eq('user_id', u.id).eq('status','active').order('created_at', { ascending: false }),
-        supabase.from('daily_logs').select('*').eq('user_id', u.id).gte('date', weekStr).order('date'),
-        supabase.from('daily_logs').select('*').eq('user_id', u.id).eq('date', today).single().catch(() => ({ data: null })),
-        supabase.from('checkins').select('*').eq('user_id', u.id).gte('date', weekStr),
-      ])
+        const [
+          { data: sess },
+          { data: spr },
+          { data: logs },
+          { data: checkData },
+        ] = await Promise.all([
+          supabase.from('sessions').select('*').eq('user_id', u.id).order('created_at', { ascending: false }),
+          supabase.from('sprints').select('*').eq('user_id', u.id).eq('status','active').order('created_at', { ascending: false }),
+          supabase.from('daily_logs').select('*').eq('user_id', u.id).gte('date', weekStr).order('date'),
+          supabase.from('checkins').select('*').eq('user_id', u.id).gte('date', weekStr),
+        ])
 
-      setSessions(sess || [])
-      setSprints(spr || [])
-      setWeekLogs(logs || [])
-      setTodayLog(todayLogData)
-      setCheckins(checkData || [])
-      setLoading(false)
-    })
+        // Load today log separately to avoid single() error
+        const { data: todayLogData } = await supabase
+          .from('daily_logs').select('*').eq('user_id', u.id).eq('date', today)
+          .maybeSingle()
+
+        setSessions(sess || [])
+        setSprints(spr || [])
+        setWeekLogs(logs || [])
+        setTodayLog(todayLogData || null)
+        setCheckins(checkData || [])
+      } catch(e) {
+        console.error('Dashboard load error:', e)
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
   }, [])
 
   async function signOut() {
