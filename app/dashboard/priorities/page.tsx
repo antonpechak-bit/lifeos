@@ -63,6 +63,30 @@ function PrioritiesContent() {
   const [sprintSaved, setSprintSaved] = useState(false)
   const messagesEndRef = useRef(null)
   const taRef = useRef(null)
+  const recognitionRef = useRef(null)
+  const [listening, setListening] = useState(false)
+
+  function startVoice() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SR) return
+    const rec = new SR()
+    rec.lang = 'ru-RU'
+    rec.continuous = false
+    rec.interimResults = false
+    rec.onstart = () => setListening(true)
+    rec.onend = () => setListening(false)
+    rec.onresult = (e) => {
+      const t = e.results[0][0].transcript
+      setInput(prev => prev ? prev + ' ' + t : t)
+      if (taRef.current) {
+        taRef.current.style.height = 'auto'
+        taRef.current.style.height = Math.min(taRef.current.scrollHeight, 120) + 'px'
+      }
+    }
+    rec.onerror = () => setListening(false)
+    recognitionRef.current = rec
+    rec.start()
+  }
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }) => {
