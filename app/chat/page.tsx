@@ -255,8 +255,9 @@ function ChatContent() {
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         <aside style={{
-          width: 200,
-          borderRight: '1px solid var(--border)',
+  width: 200,
+  borderRight: '1px solid var(--border)',
+  display: 'none',
           padding: '20px 12px',
           display: 'flex',
           flexDirection: 'column',
