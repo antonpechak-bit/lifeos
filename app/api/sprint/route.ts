@@ -104,8 +104,7 @@ ${priority || 'Не указан'}`
         const lines = sprintRaw.split('\n').map(l => l.trim()).filter(Boolean)
         const get = (key: string) => lines.find(l => l.startsWith(key + ':'))?.slice(key.length + 1).trim() || ''
 
-        const endsAt = new Date()
-        endsAt.setDate(endsAt.getDate() + parseInt(get('DAYS') || '14'))
+        
 
       const endsAt = new Date()
 endsAt.setDate(endsAt.getDate() + parseInt(get('DAYS') || '14'))
