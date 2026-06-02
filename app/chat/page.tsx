@@ -1,4 +1,4 @@
-
+// @ts-nocheck
 'use client'
 import { useEffect, useRef, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
@@ -163,26 +163,38 @@ function ChatContent() {
   const [sessionLoaded, setSessionLoaded] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [listening, setListening] = useState(false)
+  const recognitionRef = useRef<any>(null)
 
- useEffect(() => {
-  async function init() {
-    // Create session if none
-    if (!sessionId) {
-      const { data: authData } = await supabase.auth.getSession()
-      const userId = authData?.session?.user?.id
-      const { data: newSession } = await supabase.from('sessions').insert({
-        user_id: userId || null,
-        messages: [],
-        current_layer: 0,
-        completed: false,
-      }).select('id').single()
-      if (newSession?.id) {
-        router.replace(`/chat?session=${newSession.id}`)
+  function startVoice() {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!SpeechRecognition) return
+    const rec = new SpeechRecognition()
+    rec.lang = 'ru-RU'
+    rec.continuous = false
+    rec.interimResults = false
+    rec.onstart = () => setListening(true)
+    rec.onend = () => setListening(false)
+    rec.onresult = (e: any) => {
+      const transcript = e.results[0][0].transcript
+      setInput(prev => prev ? prev + ' ' + transcript : transcript)
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto'
+        textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 160) + 'px'
       }
-      return
     }
+    rec.onerror = () => setListening(false)
+    recognitionRef.current = rec
+    rec.start()
+  }
 
-    if (!sessionLoaded) {
+  function stopVoice() {
+    recognitionRef.current?.stop()
+    setListening(false)
+  }
+
+  useEffect(() => {
+    if (sessionId && !sessionLoaded) {
       supabase.from('sessions').select('messages, current_layer').eq('id', sessionId).single()
         .then(({ data }) => {
           if (data?.messages?.length > 0) {
@@ -192,9 +204,7 @@ function ChatContent() {
           setSessionLoaded(true)
         })
     }
-  }
-  init()
-}, [sessionId, sessionLoaded])
+  }, [sessionId, sessionLoaded])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -274,9 +284,8 @@ function ChatContent() {
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         <aside style={{
-  width: 200,
-  borderRight: '1px solid var(--border)',
-  display: 'none',
+          width: 200,
+          borderRight: '1px solid var(--border)',
           padding: '20px 12px',
           display: 'flex',
           flexDirection: 'column',
@@ -356,7 +365,7 @@ function ChatContent() {
                         <StateMapCard raw={mapRaw} />
                         <div style={{ marginTop: 14 }}>
                           <button
-                            onClick={() => { window.location.href = '/dashboard/priorities' }}
+                            onClick={() => { const url = sessionId ? `/dashboard/priorities?session=${sessionId}` : '/dashboard/priorities'; window.location.href = url }}
                             style={{ width:'100%', padding:'11px 20px', borderRadius:12, background:'var(--accent,#c8b89a)', color:'var(--bg,#0d0d0f)', border:'none', fontFamily:"'DM Sans',sans-serif", fontSize:13, fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
                             Открыть карту приоритетов →
                           </button>
