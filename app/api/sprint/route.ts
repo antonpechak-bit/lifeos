@@ -124,7 +124,6 @@ const { data: insertData, error: insertError } = await supabase.from('sprints').
 })
 console.log('Sprint insert data:', JSON.stringify(insertData))
 console.log('Sprint insert error:', JSON.stringify(insertError))
-        })
       }
     }
 
