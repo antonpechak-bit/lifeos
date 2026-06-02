@@ -88,7 +88,23 @@ function CheckinContent() {
           setWeekDays(days)
 
           const todayCheck = checks?.find(c => c.date === today)
-          if (todayCheck) setSprintDone(todayCheck.completed ? 'yes' : 'no')
+          if (todayCheck) setSprintDone(todayCheck.completed ? 'yes' : todayCheck.note ? 'partial' : 'no')
+          if (todayCheck?.note) setBarrier(todayCheck.note)
+        }
+
+        // Load today's daily log if exists
+        const { data: logData } = await supabase
+          .from('daily_logs').select('*').eq('user_id', u.id).eq('date', today)
+          .maybeSingle()
+
+        if (logData) {
+          setWellbeing({ energy: logData.energy, mood: logData.mood, meaning: logData.meaning, connection: logData.connection })
+          setSleepQuality(logData.sleep_quality)
+          setWakeTime(logData.wake_time || '')
+          setWorkout(logData.workout)
+          setSteps(logData.steps?.toString() || '')
+          setAnxietyLevel(logData.anxiety_level)
+          setRegulation(logData.regulation_practice)
         }
 
         setStep('sprint')
@@ -345,4 +361,3 @@ function CheckinContent() {
 export default function CheckinPage() {
   return <Suspense><CheckinContent /></Suspense>
 }
-
