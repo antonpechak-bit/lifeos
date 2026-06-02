@@ -343,10 +343,15 @@ function PrioritiesContent() {
                   style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: 'var(--text,#e8e6e0)', fontFamily: "'DM Sans',sans-serif", fontSize: 13, lineHeight: 1.5, padding: '10px 12px', resize: 'none', maxHeight: 120, overflowY: 'auto' }}
                 />
                 <button
+                  onClick={listening ? () => { recognitionRef.current?.stop(); setListening(false) } : startVoice}
+                  style={{ width:32, height:32, margin:'5px 0 5px 5px', borderRadius:8, background: listening ? 'rgba(224,112,112,0.15)' : 'var(--surface2,#1a1a1e)', border:`1px solid ${listening ? 'rgba(224,112,112,0.35)' : 'rgba(255,255,255,0.07)'}`, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill={listening ? '#e07070' : '#555'}><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg>
+                </button>
+                <button
                   onClick={sendMessage}
                   disabled={chatLoading || !input.trim()}
-                  style={{ width: 32, height: 32, margin: 5, borderRadius: 8, background: chatLoading || !input.trim() ? 'var(--surface2,#1a1a1e)' : 'var(--accent,#c8b89a)', border: 'none', cursor: chatLoading || !input.trim() ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill={chatLoading || !input.trim() ? '#444' : '#0d0d0f'}><path d="M2 21L23 12 2 3v7l15 2-15 2v7z" /></svg>
+                  style={{ width:32, height:32, margin:'5px 5px 5px 0', borderRadius:8, background:chatLoading||!input.trim()?'var(--surface2,#1a1a1e)':'var(--accent,#c8b89a)', border:'none', cursor:chatLoading||!input.trim()?'not-allowed':'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill={chatLoading||!input.trim()?'#444':'#0d0d0f'}><path d="M2 21L23 12 2 3v7l15 2-15 2v7z"/></svg>
                 </button>
               </div>
             </div>
