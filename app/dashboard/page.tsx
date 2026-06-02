@@ -192,12 +192,8 @@ function SprintCard({ sprint, onCheckin }) {
   const pct = Math.round((doneCount / daysTotal) * 100)
 
   async function markToday() {
-    const today = new Date().toISOString().split('T')[0]
-    const { data: { session } } = await supabase.auth.getSession()
-    await supabase.from('checkins').upsert({ sprint_id: sprint.id, user_id: session.user.id, date: today, completed: true }, { onConflict: 'sprint_id,date' })
-    setTodayDone(true)
-    setCheckins(prev => [...prev.filter(c => c.date !== today), { date: today, completed: true }])
-  }
+  router.push('/checkin')
+}
 
   return (
     <div style={{ background:'var(--surface,#141416)', border:'1px solid var(--border,rgba(255,255,255,0.07))', borderRadius:14, padding:'16px 18px' }}>
