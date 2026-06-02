@@ -107,18 +107,23 @@ ${priority || 'Не указан'}`
         const endsAt = new Date()
         endsAt.setDate(endsAt.getDate() + parseInt(get('DAYS') || '14'))
 
-        await supabase.from('sprints').insert({
-          user_id: userId,
-          session_id: sessionId,
-          layer: get('LAYER'),
-          behavior_name: get('NAME'),
-          behavior_description: get('DESCRIPTION'),
-          anchor: get('ANCHOR'),
-          level: get('LEVEL'),
-          target_days: parseInt(get('DAYS') || '14'),
-          started_at: new Date().toISOString().split('T')[0],
-          ends_at: endsAt.toISOString().split('T')[0],
-          status: 'active',
+      const endsAt = new Date()
+endsAt.setDate(endsAt.getDate() + parseInt(get('DAYS') || '14'))
+const { data: insertData, error: insertError } = await supabase.from('sprints').insert({
+  user_id: userId,
+  session_id: sessionId,
+  layer: get('LAYER'),
+  behavior_name: get('NAME'),
+  behavior_description: get('DESCRIPTION'),
+  anchor: get('ANCHOR'),
+  level: get('LEVEL'),
+  target_days: parseInt(get('DAYS') || '14'),
+  started_at: new Date().toISOString().split('T')[0],
+  ends_at: endsAt.toISOString().split('T')[0],
+  status: 'active',
+})
+console.log('Sprint insert data:', JSON.stringify(insertData))
+console.log('Sprint insert error:', JSON.stringify(insertError))
         })
       }
     }
