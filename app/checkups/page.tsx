@@ -434,34 +434,12 @@ function CheckupsContent() {
         if (data.records && data.records.length > 0) {
           for (const record of data.records) {
             const resolvedLabName = record.lab_name || labName || null
-
-            // Save all biomarkers to health_biomarkers
-            if (record.biomarkers && record.biomarkers.length > 0) {
-              const rows = record.biomarkers.map(b => ({
-                user_id: user.id,
-                date: record.date,
-                lab_name: resolvedLabName,
-                key: b.key,
-                name: b.name,
-                value: b.value,
-                unit: b.unit || null,
-                ref_min: b.ref_min ?? null,
-                ref_max: b.ref_max ?? null,
-                is_flagged: b.is_flagged ?? false,
-              }))
-              console.log(`[handleUpload] upserting ${rows.length} rows for date=${record.date}`)
-              const { data: upsertData, error: upsertError } = await supabase
-                .from('health_biomarkers')
-                .upsert(rows, { onConflict: 'user_id,date,key' })
-                .select()
-              console.log(`[handleUpload] health_biomarkers result for date=${record.date} | error:`, upsertError, '| rows returned:', upsertData?.length ?? 0)
-            }
-
-            // Save standard 22 fields to health_metrics for backward compat
             if (record.found && Object.keys(record.found).length > 0) {
               const payload = { user_id: user.id, date: record.date, lab_name: resolvedLabName, notes: notes || null }
               Object.entries(record.found).forEach(([key, val]) => { if (val !== null) payload[key] = val })
-              await supabase.from('health_metrics').upsert(payload, { onConflict: 'user_id,date' })
+              console.log(`[handleUpload] upserting health_metrics for date=${record.date} | keys:`, Object.keys(record.found).join(','))
+              const { error } = await supabase.from('health_metrics').upsert(payload, { onConflict: 'user_id,date' })
+              if (error) console.error('[handleUpload] health_metrics error:', error)
             }
           }
 
@@ -475,21 +453,15 @@ function CheckupsContent() {
           if (last.lab_name) setLabName(last.lab_name)
           if (last.date) setDate(last.date)
 
-          // Reload both tables
-          await Promise.all([
-            supabase.from('health_metrics').select('*').eq('user_id', user.id).order('date', { ascending: false }).limit(50)
-              .then(({ data: hist }) => setHistory(hist || [])),
-            loadBiomarkers(user.id),
-          ])
+          const { data: hist } = await supabase.from('health_metrics').select('*').eq('user_id', user.id).order('date', { ascending: false }).limit(50)
+          setHistory(hist || [])
 
           const savedDates = data.records.map(r => r.date).join(', ')
-          const flaggedCount = data.records.reduce((sum, r) => sum + (r.biomarkers || []).filter(b => b.is_flagged).length, 0)
           setUploadResult({
             success: true,
             count: data.total_count,
             dates: data.dates_found,
             savedDates,
-            flaggedCount,
             text: data.summary,
           })
         } else {
@@ -593,7 +565,7 @@ function CheckupsContent() {
               {uploadResult && (
                 <div style={{ marginTop:10, padding:'10px 12px', borderRadius:10, background: uploadResult.success ? 'rgba(122,184,122,0.08)' : 'rgba(224,112,112,0.08)', border:`1px solid ${uploadResult.success ? 'rgba(122,184,122,0.25)' : 'rgba(224,112,112,0.2)'}`, fontSize:12, color: uploadResult.success ? s.green : s.red, lineHeight:1.6 }}>
                   {uploadResult.success
-                    ? `✓ Сохранено ${uploadResult.dates} ${uploadResult.dates === 1 ? 'запись' : 'записей'}, ${uploadResult.count} показателей${uploadResult.flaggedCount > 0 ? `, из них ${uploadResult.flaggedCount} вне нормы` : ''}. Даты: ${uploadResult.savedDates}. `
+                    ? `✓ Сохранено ${uploadResult.dates} ${uploadResult.dates === 1 ? 'запись' : 'записей'}, ${uploadResult.count} показателей. Даты: ${uploadResult.savedDates}. `
                     : ''
                   }{uploadResult.text}
                 </div>
