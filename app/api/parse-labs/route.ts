@@ -81,16 +81,23 @@ export async function POST(req: NextRequest) {
       }],
     })
 
-    console.log('[parse-labs] Claude stop_reason:', response.stop_reason)
-    const raw = response.content[0].type === 'text' ? response.content[0].text : '{}'
-    console.log('[parse-labs] Claude raw response:\n', raw)
+    console.log('[parse-labs] Claude stop_reason:', response.stop_reason, '| content blocks:', response.content.length)
+    const raw = response.content[0]?.type === 'text' ? response.content[0].text : ''
+    console.log('[parse-labs] Claude raw response (first 1000 chars):', raw.slice(0, 1000))
+    if (!raw) {
+      console.error('[parse-labs] Empty response from Claude')
+      return NextResponse.json({ error: 'Empty response from Claude', records: [] }, { status: 500 })
+    }
     const clean = raw.replace(/```json|```/g, '').trim()
 
     let parsed
     try {
       parsed = JSON.parse(clean)
-    } catch {
-      console.error('[parse-labs] JSON.parse failed, attempting fallback extraction')
+      console.log('[parse-labs] JSON.parse succeeded | records:', parsed.records?.length ?? 0,
+        '| first record biomarkers:', parsed.records?.[0]?.biomarkers?.length ?? 'n/a')
+    } catch (parseErr) {
+      console.error('[parse-labs] JSON.parse failed:', parseErr.message)
+      console.error('[parse-labs] Failing JSON (first 500 chars):', clean.slice(0, 500))
       const recordMatches = clean.matchAll(/\{[^{}]*"date"\s*:[^{}]*\{[^{}]*\}[^{}]*\}/gs)
       const extractedRecords = []
       for (const match of recordMatches) {
@@ -111,6 +118,7 @@ export async function POST(req: NextRequest) {
     // Build normalized records — biomarkers array + legacy found map
     const records = (parsed.records || []).map(record => {
       const biomarkers = (record.biomarkers || []).filter(b => b.value !== null && b.value !== undefined)
+      console.log(`[parse-labs] record date=${record.date} | biomarkers=${biomarkers.length} | keys:`, biomarkers.map(b => b.key).join(','))
       return {
         date: record.date,
         lab_name: record.lab_name,
@@ -119,6 +127,8 @@ export async function POST(req: NextRequest) {
         found: Object.fromEntries(biomarkers.filter(b => LEGACY_KEYS.has(b.key)).map(b => [b.key, b.value])),
       }
     }).filter(r => r.count > 0)
+
+    console.log('[parse-labs] final records after filter:', records.length, '| total biomarkers:', records.reduce((s, r) => s + r.count, 0))
 
     const totalCount = records.reduce((sum, r) => sum + r.count, 0)
 
