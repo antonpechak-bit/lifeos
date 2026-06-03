@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-5',
-      max_tokens: 2000,
+      max_tokens: 4000,
       messages: [{
         role: 'user',
         content: [fileBlock, { type: 'text', text: PROMPT_TEXT }],
@@ -90,8 +90,23 @@ export async function POST(req: NextRequest) {
     try {
       parsed = JSON.parse(clean)
     } catch {
-      console.error('[parse-labs] JSON.parse failed on:', clean)
-      return NextResponse.json({ error: 'Failed to parse response', raw }, { status: 500 })
+      console.error('[parse-labs] JSON.parse failed, attempting record extraction from truncated response')
+      // Extract individual record objects via regex when the outer JSON is truncated
+      const recordMatches = clean.matchAll(/\{[^{}]*"date"\s*:[^{}]*\{[^{}]*\}[^{}]*\}/gs)
+      const extractedRecords = []
+      for (const match of recordMatches) {
+        try {
+          const rec = JSON.parse(match[0])
+          if (rec.date) extractedRecords.push(rec)
+        } catch {
+          // skip unparseable fragment
+        }
+      }
+      console.log('[parse-labs] Extracted records via fallback regex:', extractedRecords.length)
+      if (extractedRecords.length === 0) {
+        return NextResponse.json({ error: 'Failed to parse response', raw }, { status: 500 })
+      }
+      parsed = { records: extractedRecords, summary: null }
     }
 
     console.log('[parse-labs] parsed.records count:', parsed.records?.length ?? 0)
