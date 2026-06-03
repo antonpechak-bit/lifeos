@@ -418,8 +418,8 @@ function CheckupsContent() {
               .upsert(payload, { onConflict: 'user_id,date' })
           }
 
-          // Показываем последнюю запись в форме
-          const last = data.records[data.records.length - 1]
+          // Показываем самую свежую запись в форме
+          const last = [...data.records].sort((a, b) => b.date.localeCompare(a.date))[0]
           setValues(prev => {
             const updated = { ...prev }
             Object.entries(last.found).forEach(([key, val]) => {
