@@ -172,6 +172,19 @@ const STATUS_COLORS = {
   danger:  { bg:'rgba(224,112,112,0.1)', border:'rgba(224,112,112,0.25)', text:'#e07070', dot:'#e07070' },
 }
 
+function getBiomarkerStatus(value, ref_min, ref_max, is_flagged) {
+  if (is_flagged) return 'danger'
+  if (ref_min != null && ref_max != null) {
+    if (value >= ref_min && value <= ref_max) return 'optimal'
+    const margin = (ref_max - ref_min) * 0.2
+    if (value >= ref_min - margin && value <= ref_max + margin) return 'warning'
+    return 'danger'
+  }
+  if (ref_min != null && value < ref_min) return 'danger'
+  if (ref_max != null && value > ref_max) return 'danger'
+  return null
+}
+
 // ─── Мини-график динамики ─────────────────────────────────────
 
 function SparkLine({ points, optimal, width = 80, height = 32 }) {
@@ -203,23 +216,25 @@ function SparkLine({ points, optimal, width = 80, height = 32 }) {
 
 // ─── Вкладка Динамика ─────────────────────────────────────────
 
-function DynamicsTab({ history }) {
+function DynamicsTab({ biomarkerRows }) {
   const [selectedKey, setSelectedKey] = useState(null)
 
-  // Собираем тренды по каждому биомаркеру
-  const trends = ALL_FIELDS.map(field => {
-    const points = history
-      .filter(row => row[field.key] != null)
-      .map(row => ({ date: row.date, value: row[field.key], key: field.key }))
-      .sort((a, b) => a.date.localeCompare(b.date))
-    if (points.length === 0) return null
-    const latest = points[points.length - 1].value
-    const first = points[0].value
-    const change = points.length > 1 ? ((latest - first) / Math.abs(first) * 100) : 0
+  // Group flat biomarker rows by key
+  const byKey = {}
+  for (const row of (biomarkerRows || [])) {
+    if (!byKey[row.key]) byKey[row.key] = { key: row.key, name: row.name, unit: row.unit, points: [] }
+    byKey[row.key].points.push({ date: row.date, value: Number(row.value), ref_min: row.ref_min, ref_max: row.ref_max, is_flagged: row.is_flagged })
+  }
+
+  const trends = Object.values(byKey).map(b => {
+    const points = [...b.points].sort((a, c) => a.date.localeCompare(c.date))
+    const latest = points[points.length - 1]
+    const first = points[0]
+    const change = points.length > 1 ? ((latest.value - first.value) / Math.abs(first.value || 1) * 100) : 0
     const trend = Math.abs(change) < 5 ? 'stable' : change > 0 ? 'rising' : 'falling'
-    const status = getStatus(field.key, latest)
-    return { field, points, latest, change, trend, status }
-  }).filter(Boolean)
+    const status = getBiomarkerStatus(latest.value, latest.ref_min, latest.ref_max, latest.is_flagged)
+    return { ...b, points, latest, change, trend, status }
+  }).sort((a, b) => b.points.length - a.points.length || a.name.localeCompare(b.name))
 
   if (trends.length === 0) {
     return (
@@ -230,7 +245,7 @@ function DynamicsTab({ history }) {
     )
   }
 
-  const selected = selectedKey ? trends.find(t => t.field.key === selectedKey) : null
+  const selected = selectedKey ? trends.find(t => t.key === selectedKey) : null
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
@@ -240,13 +255,16 @@ function DynamicsTab({ history }) {
         <div style={{ background:s.surface, border:`1px solid ${s.border2}`, borderRadius:14, padding:16, animation:'fadeUp 0.2s forwards' }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:12 }}>
             <div>
-              <div style={{ fontSize:14, fontWeight:500, color:s.text }}>{selected.field.label}</div>
-              <div style={{ fontSize:11, color:s.dim, marginTop:2 }}>Оптимум: {selected.field.optimal} {selected.field.unit}</div>
+              <div style={{ fontSize:14, fontWeight:500, color:s.text }}>{selected.name}</div>
+              {selected.latest.ref_min != null && selected.latest.ref_max != null && (
+                <div style={{ fontSize:11, color:s.dim, marginTop:2 }}>
+                  Референс: {selected.latest.ref_min}–{selected.latest.ref_max} {selected.unit}
+                </div>
+              )}
             </div>
             <button onClick={() => setSelectedKey(null)} style={{ fontSize:18, color:s.dim, background:'none', border:'none', cursor:'pointer' }}>×</button>
           </div>
 
-          {/* Большой график */}
           <div style={{ position:'relative', height:120, marginBottom:12 }}>
             {(() => {
               const pts = selected.points
@@ -268,7 +286,7 @@ function DynamicsTab({ history }) {
                   <path d={path} fill="none" stroke={sc.dot} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   {coords.map((c, i) => (
                     <g key={i}>
-                      <circle cx={c.x} cy={c.y} r="4" fill={sc.dot} />
+                      <circle cx={c.x} cy={c.y} r="4" fill={c.is_flagged ? s.red : sc.dot} />
                       <text x={c.x} y={H - 4} textAnchor="middle" fontSize="9" fill={s.dim}>
                         {new Date(c.date).toLocaleDateString('ru', { month:'short', year:'2-digit' })}
                       </text>
@@ -282,17 +300,19 @@ function DynamicsTab({ history }) {
             })()}
           </div>
 
-          {/* Все точки */}
           <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
             {[...selected.points].reverse().map((p, i) => {
-              const st = getStatus(selected.field.key, p.value)
+              const st = getBiomarkerStatus(p.value, p.ref_min, p.ref_max, p.is_flagged)
               const sc = st ? STATUS_COLORS[st] : { bg: s.surface2, border: s.border, text: s.dim }
               return (
                 <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'6px 10px', borderRadius:8, background:sc.bg, border:`1px solid ${sc.border}` }}>
                   <span style={{ fontSize:12, color:s.dim }}>
                     {new Date(p.date).toLocaleDateString('ru', { day:'numeric', month:'long', year:'numeric' })}
                   </span>
-                  <span style={{ fontSize:13, fontWeight:500, color:sc.text }}>{p.value} {selected.field.unit}</span>
+                  <span style={{ fontSize:13, fontWeight:500, color:sc.text }}>
+                    {p.value} {selected.unit}
+                    {p.is_flagged && <span style={{ marginLeft:6, fontSize:10 }}>⚠</span>}
+                  </span>
                 </div>
               )
             })}
@@ -300,47 +320,43 @@ function DynamicsTab({ history }) {
         </div>
       )}
 
-      {/* Список всех показателей с мини-графиками */}
-      {METRICS.map(group => {
-        const groupTrends = trends.filter(t => group.fields.find(f => f.key === t.field.key))
-        if (groupTrends.length === 0) return null
-        return (
-          <div key={group.group} style={{ background:s.surface, border:`1px solid ${s.border}`, borderRadius:14, padding:16 }}>
-            <div style={{ fontSize:11, color:s.muted, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:12 }}>
-              {group.emoji} {group.group}
-            </div>
-            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-              {groupTrends.map(t => {
-                const sc = t.status ? STATUS_COLORS[t.status] : { bg: s.surface2, border: s.border, text: s.dim, dot: s.dim }
-                const trendIcon = t.trend === 'rising' ? '↑' : t.trend === 'falling' ? '↓' : '→'
-                const isSelected = selectedKey === t.field.key
-                return (
-                  <div
-                    key={t.field.key}
-                    onClick={() => setSelectedKey(isSelected ? null : t.field.key)}
-                    style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 12px', borderRadius:10, background: isSelected ? sc.bg : s.surface2, border:`1px solid ${isSelected ? sc.border : s.border}`, cursor:'pointer', transition:'all 0.15s' }}
-                  >
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ fontSize:12, color:s.dim, marginBottom:2 }}>{t.field.label}</div>
-                      <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                        <span style={{ fontSize:15, fontWeight:500, color:sc.text }}>{t.latest}</span>
-                        <span style={{ fontSize:11, color:s.muted }}>{t.field.unit}</span>
-                        {t.points.length > 1 && (
-                          <span style={{ fontSize:11, color: t.trend === 'rising' ? s.green : t.trend === 'falling' ? s.red : s.dim }}>
-                            {trendIcon} {Math.abs(t.change).toFixed(0)}%
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <SparkLine points={t.points} optimal={t.field.optimal} />
-                    <div style={{ width:6, height:6, borderRadius:'50%', background:sc.dot, flexShrink:0 }} />
+      {/* Список всех показателей */}
+      <div style={{ background:s.surface, border:`1px solid ${s.border}`, borderRadius:14, padding:16 }}>
+        <div style={{ fontSize:11, color:s.muted, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:12 }}>
+          Все показатели ({trends.length})
+        </div>
+        <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+          {trends.map(t => {
+            const sc = t.status ? STATUS_COLORS[t.status] : { bg: s.surface2, border: s.border, text: s.dim, dot: s.dim }
+            const trendIcon = t.trend === 'rising' ? '↑' : t.trend === 'falling' ? '↓' : '→'
+            const isSelected = selectedKey === t.key
+            const sparkPoints = t.points.map(p => ({ ...p, key: t.key }))
+            return (
+              <div
+                key={t.key}
+                onClick={() => setSelectedKey(isSelected ? null : t.key)}
+                style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 12px', borderRadius:10, background: isSelected ? sc.bg : s.surface2, border:`1px solid ${isSelected ? sc.border : s.border}`, cursor:'pointer', transition:'all 0.15s' }}
+              >
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:12, color:s.dim, marginBottom:2 }}>{t.name}</div>
+                  <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                    <span style={{ fontSize:15, fontWeight:500, color:sc.text }}>{t.latest.value}</span>
+                    <span style={{ fontSize:11, color:s.muted }}>{t.unit}</span>
+                    {t.points.length > 1 && (
+                      <span style={{ fontSize:11, color: t.trend === 'rising' ? s.green : t.trend === 'falling' ? s.red : s.dim }}>
+                        {trendIcon} {Math.abs(t.change).toFixed(0)}%
+                      </span>
+                    )}
+                    {t.latest.is_flagged && <span style={{ fontSize:10, color:s.red }}>⚠</span>}
                   </div>
-                )
-              })}
-            </div>
-          </div>
-        )
-      })}
+                </div>
+                {t.points.length > 1 && <SparkLine points={sparkPoints} />}
+                <div style={{ width:6, height:6, borderRadius:'50%', background:sc.dot, flexShrink:0 }} />
+              </div>
+            )
+          })}
+        </div>
+      </div>
     </div>
   )
 }
@@ -362,7 +378,18 @@ function CheckupsContent() {
   const [tab, setTab] = useState('input')
   const [uploading, setUploading] = useState(false)
   const [uploadResult, setUploadResult] = useState(null)
+  const [biomarkerRows, setBiomarkerRows] = useState([])
   const fileInputRef = useRef(null)
+
+  async function loadBiomarkers(userId) {
+    const { data, error } = await supabase
+      .from('health_biomarkers')
+      .select('*')
+      .eq('user_id', userId)
+      .order('date', { ascending: false })
+      .limit(2000)
+    if (!error) setBiomarkerRows(data || [])
+  }
 
   useEffect(() => {
     async function load() {
@@ -370,10 +397,11 @@ function CheckupsContent() {
         const { data: authData } = await supabase.auth.getSession()
         if (!authData?.session) { router.push('/'); return }
         setUser(authData.session.user)
-        const { data: hist } = await supabase
-          .from('health_metrics').select('*')
-          .eq('user_id', authData.session.user.id)
-          .order('date', { ascending: false }).limit(50)
+        const uid = authData.session.user.id
+        const [{ data: hist }] = await Promise.all([
+          supabase.from('health_metrics').select('*').eq('user_id', uid).order('date', { ascending: false }).limit(50),
+          loadBiomarkers(uid),
+        ])
         setHistory(hist || [])
       } catch(e) { console.error(e) }
       finally { setLoading(false) }
@@ -402,49 +430,62 @@ function CheckupsContent() {
         console.log('[handleUpload] data.records:', JSON.stringify(data.records, null, 2))
 
         if (data.records && data.records.length > 0) {
-          // Сохраняем все записи по датам
           for (const record of data.records) {
-            const payload = {
-              user_id: user.id,
-              date: record.date,
-              lab_name: record.lab_name || labName || null,
-              notes: notes || null,
+            const resolvedLabName = record.lab_name || labName || null
+
+            // Save all biomarkers to health_biomarkers
+            if (record.biomarkers && record.biomarkers.length > 0) {
+              const rows = record.biomarkers.map(b => ({
+                user_id: user.id,
+                date: record.date,
+                lab_name: resolvedLabName,
+                key: b.key,
+                name: b.name,
+                value: b.value,
+                unit: b.unit || null,
+                ref_min: b.ref_min ?? null,
+                ref_max: b.ref_max ?? null,
+                is_flagged: b.is_flagged ?? false,
+              }))
+              const { error } = await supabase
+                .from('health_biomarkers')
+                .upsert(rows, { onConflict: 'user_id,date,key' })
+              if (error) console.error('[handleUpload] health_biomarkers error:', error)
             }
-            Object.entries(record.found).forEach(([key, val]) => {
-              if (val !== null) payload[key] = val
-            })
-            await supabase
-              .from('health_metrics')
-              .upsert(payload, { onConflict: 'user_id,date' })
+
+            // Save standard 22 fields to health_metrics for backward compat
+            if (record.found && Object.keys(record.found).length > 0) {
+              const payload = { user_id: user.id, date: record.date, lab_name: resolvedLabName, notes: notes || null }
+              Object.entries(record.found).forEach(([key, val]) => { if (val !== null) payload[key] = val })
+              await supabase.from('health_metrics').upsert(payload, { onConflict: 'user_id,date' })
+            }
           }
 
-          // Показываем самую свежую запись в форме
+          // Show most recent record in the manual form
           const last = [...data.records].sort((a, b) => b.date.localeCompare(a.date))[0]
           setValues(prev => {
             const updated = { ...prev }
-            Object.entries(last.found).forEach(([key, val]) => {
-              if (val !== null) updated[key] = String(val)
-            })
+            Object.entries(last.found || {}).forEach(([key, val]) => { if (val !== null) updated[key] = String(val) })
             return updated
           })
           if (last.lab_name) setLabName(last.lab_name)
           if (last.date) setDate(last.date)
 
-          // Обновляем историю после сохранения всех записей
-          const { data: hist } = await supabase
-            .from('health_metrics')
-            .select('*')
-            .eq('user_id', user.id)
-            .order('date', { ascending: false })
-            .limit(50)
-          setHistory(hist || [])
+          // Reload both tables
+          await Promise.all([
+            supabase.from('health_metrics').select('*').eq('user_id', user.id).order('date', { ascending: false }).limit(50)
+              .then(({ data: hist }) => setHistory(hist || [])),
+            loadBiomarkers(user.id),
+          ])
 
           const savedDates = data.records.map(r => r.date).join(', ')
+          const flaggedCount = data.records.reduce((sum, r) => sum + (r.biomarkers || []).filter(b => b.is_flagged).length, 0)
           setUploadResult({
             success: true,
             count: data.total_count,
             dates: data.dates_found,
             savedDates,
+            flaggedCount,
             text: data.summary,
           })
         } else {
@@ -548,7 +589,7 @@ function CheckupsContent() {
               {uploadResult && (
                 <div style={{ marginTop:10, padding:'10px 12px', borderRadius:10, background: uploadResult.success ? 'rgba(122,184,122,0.08)' : 'rgba(224,112,112,0.08)', border:`1px solid ${uploadResult.success ? 'rgba(122,184,122,0.25)' : 'rgba(224,112,112,0.2)'}`, fontSize:12, color: uploadResult.success ? s.green : s.red, lineHeight:1.6 }}>
                   {uploadResult.success
-                    ? `✓ Сохранено ${uploadResult.dates} ${uploadResult.dates === 1 ? 'запись' : 'записей'}, ${uploadResult.count} показателей. Даты: ${uploadResult.savedDates}. `
+                    ? `✓ Сохранено ${uploadResult.dates} ${uploadResult.dates === 1 ? 'запись' : 'записей'}, ${uploadResult.count} показателей${uploadResult.flaggedCount > 0 ? `, из них ${uploadResult.flaggedCount} вне нормы` : ''}. Даты: ${uploadResult.savedDates}. `
                     : ''
                   }{uploadResult.text}
                 </div>
@@ -597,41 +638,68 @@ function CheckupsContent() {
         )}
 
         {/* ── История ── */}
-        {tab === 'history' && (
-          <div style={{ display:'flex', flexDirection:'column', gap:10, animation:'fadeUp 0.3s forwards' }}>
-            {history.length === 0 ? (
-              <div style={{ textAlign:'center', padding:'40px 20px', border:`1px dashed ${s.border}`, borderRadius:14 }}>
-                <div style={{ fontSize:14, color:s.dim }}>Ещё нет данных чекапов</div>
-              </div>
-            ) : history.map((h, i) => (
-              <div key={i} style={{ background:s.surface, border:`1px solid ${s.border}`, borderRadius:14, padding:'14px 16px' }}>
-                <div style={{ display:'flex', justifyContent:'space-between', marginBottom:12 }}>
-                  <div style={{ fontSize:13, fontWeight:500 }}>
-                    {new Date(h.date).toLocaleDateString('ru', { day:'numeric', month:'long', year:'numeric' })}
-                  </div>
-                  {h.lab_name && <div style={{ fontSize:11, color:s.dim }}>{h.lab_name}</div>}
+        {tab === 'history' && (() => {
+          // Group biomarkerRows by date
+          const byDate = {}
+          for (const row of biomarkerRows) {
+            if (!byDate[row.date]) byDate[row.date] = { date: row.date, lab_name: row.lab_name, items: [] }
+            byDate[row.date].items.push(row)
+          }
+          const dateGroups = Object.values(byDate).sort((a, b) => b.date.localeCompare(a.date))
+
+          if (dateGroups.length === 0) {
+            return (
+              <div style={{ display:'flex', flexDirection:'column', gap:10, animation:'fadeUp 0.3s forwards' }}>
+                <div style={{ textAlign:'center', padding:'40px 20px', border:`1px dashed ${s.border}`, borderRadius:14 }}>
+                  <div style={{ fontSize:14, color:s.dim }}>Ещё нет данных чекапов</div>
                 </div>
-                <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
-                  {ALL_FIELDS.filter(f => h[f.key] != null).map(f => {
-                    const status = getStatus(f.key, h[f.key])
-                    const sc = status ? STATUS_COLORS[status] : { bg:s.surface2, border:s.border, text:s.dim }
-                    return (
-                      <div key={f.key} style={{ padding:'4px 10px', borderRadius:8, background:sc.bg, border:`1px solid ${sc.border}`, fontSize:11, color:sc.text }}>
-                        {f.label}: <strong>{h[f.key]}</strong>
+              </div>
+            )
+          }
+
+          return (
+            <div style={{ display:'flex', flexDirection:'column', gap:10, animation:'fadeUp 0.3s forwards' }}>
+              {dateGroups.map((group, i) => {
+                const flagged = group.items.filter(b => b.is_flagged)
+                const normal = group.items.filter(b => !b.is_flagged)
+                return (
+                  <div key={i} style={{ background:s.surface, border:`1px solid ${s.border}`, borderRadius:14, padding:'14px 16px' }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
+                      <div style={{ fontSize:13, fontWeight:500 }}>
+                        {new Date(group.date).toLocaleDateString('ru', { day:'numeric', month:'long', year:'numeric' })}
                       </div>
-                    )
-                  })}
-                </div>
-                {h.notes && <div style={{ marginTop:10, fontSize:12, color:s.dim }}>{h.notes}</div>}
-              </div>
-            ))}
-          </div>
-        )}
+                      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                        {flagged.length > 0 && (
+                          <span style={{ fontSize:11, color:s.red, background:'rgba(224,112,112,0.1)', border:'1px solid rgba(224,112,112,0.2)', borderRadius:6, padding:'2px 8px' }}>
+                            ⚠ {flagged.length} вне нормы
+                          </span>
+                        )}
+                        {group.lab_name && <span style={{ fontSize:11, color:s.dim }}>{group.lab_name}</span>}
+                      </div>
+                    </div>
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+                      {[...flagged, ...normal].map((b, j) => {
+                        const st = getBiomarkerStatus(b.value, b.ref_min, b.ref_max, b.is_flagged)
+                        const sc = st ? STATUS_COLORS[st] : { bg:s.surface2, border:s.border, text:s.dim }
+                        return (
+                          <div key={j} style={{ padding:'4px 10px', borderRadius:8, background:sc.bg, border:`1px solid ${sc.border}`, fontSize:11, color:sc.text }}>
+                            {b.name}: <strong>{b.value}</strong>{b.unit ? ` ${b.unit}` : ''}
+                            {b.is_flagged && ' ⚠'}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })()}
 
         {/* ── Динамика ── */}
         {tab === 'dynamics' && (
           <div style={{ animation:'fadeUp 0.3s forwards' }}>
-            <DynamicsTab history={history} />
+            <DynamicsTab biomarkerRows={biomarkerRows} />
           </div>
         )}
 

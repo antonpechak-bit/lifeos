@@ -4,9 +4,18 @@ import Anthropic from '@anthropic-ai/sdk'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
+// Keys that map to health_metrics columns (returned in legacy `found` map for backward compat)
+const LEGACY_KEYS = new Set([
+  'glucose','hba1c','insulin','cholesterol_ldl','cholesterol_hdl','cholesterol_total',
+  'triglycerides','crp','homocysteine','testosterone_total','testosterone_free',
+  'cortisol','tsh','vitamin_d','vitamin_b12','ferritin','iron','magnesium',
+  'omega3_index','hemoglobin','wbc','platelets',
+])
+
 const PROMPT_TEXT = `Это медицинские анализы. В документе может быть НЕСКОЛЬКО дат — динамика за разные периоды.
 
-Извлеки ВСЕ записи по датам и верни ТОЛЬКО JSON без пояснений.
+Извлеки ВСЕ числовые показатели из документа и верни ТОЛЬКО JSON без пояснений.
+Пропускай качественные результаты (Отрицательно, Не обнаружено, Положительно и т.п.) — только числа.
 
 Формат ответа:
 {
@@ -14,46 +23,34 @@ const PROMPT_TEXT = `Это медицинские анализы. В докум
     {
       "date": "YYYY-MM-DD",
       "lab_name": "название лаборатории или null",
-      "found": {
-        "glucose": число или null,
-        "hba1c": число или null,
-        "insulin": число или null,
-        "cholesterol_ldl": число или null,
-        "cholesterol_hdl": число или null,
-        "cholesterol_total": число или null,
-        "triglycerides": число или null,
-        "crp": число или null,
-        "homocysteine": число или null,
-        "testosterone_total": число или null,
-        "testosterone_free": число или null,
-        "cortisol": число или null,
-        "tsh": число или null,
-        "vitamin_d": число или null,
-        "vitamin_b12": число или null,
-        "ferritin": число или null,
-        "iron": число или null,
-        "magnesium": число или null,
-        "omega3_index": число или null,
-        "hemoglobin": число или null,
-        "wbc": число или null,
-        "platelets": число или null
-      }
+      "biomarkers": [
+        {
+          "key": "snake_case_name",
+          "name": "Название на русском",
+          "value": число,
+          "unit": "единица измерения",
+          "ref_min": число или null,
+          "ref_max": число или null,
+          "is_flagged": true/false
+        }
+      ]
     }
   ],
   "summary": "краткое описание что найдено (1-2 предложения)"
 }
 
-Важно:
+Правила:
+- key — латиница snake_case, уникальный идентификатор показателя (например: glucose, hba1c, alt, ast, creatinine, uric_acid, tsh, free_t4)
 - Если несколько дат — создай отдельную запись для каждой даты
-- Если дата не указана явно — попробуй определить из контекста, иначе используй сегодняшнюю
-- Если показатель не найден для даты — null
+- Если дата не указана — попробуй определить из контекста, иначе используй сегодняшнюю
+- is_flagged = true если рядом с значением есть *, H, L, стрелка вверх/вниз, или значение выходит за ref_min/ref_max
+- ref_min и ref_max — из референсного диапазона лаборатории (если указан)
 - Только JSON, никакого другого текста
 
-Единицы измерения — всегда приводи к стандартным:
-- glucose: ммоль/л (если указано в мг/дл — раздели на 18.0)
-- cholesterol_ldl, cholesterol_hdl, cholesterol_total, triglycerides: ммоль/л (если в мг/дл — раздели на 38.67 для холестерина, на 88.57 для триглицеридов)
-- testosterone_total, testosterone_free: нмоль/л (если в нг/дл — раздели на 28.85; если в нг/мл — умножь на 3.467)
-- Все остальные показатели — в тех единицах в которых указаны`
+Конвертация единиц — приводи к стандартным:
+- glucose: ммоль/л (если мг/дл — раздели на 18.0)
+- cholesterol_*, triglycerides: ммоль/л (если мг/дл — раздели на 38.67 для холестерина, на 88.57 для триглицеридов)
+- testosterone_total, testosterone_free: нмоль/л (если нг/дл — раздели на 28.85; если нг/мл — умножь на 3.467)`
 
 export async function POST(req: NextRequest) {
   try {
@@ -73,7 +70,7 @@ export async function POST(req: NextRequest) {
       ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data } }
       : { type: 'image', source: { type: 'base64', media_type: mediaType, data } }
 
-    console.log('[parse-labs] fileBlock type:', fileBlock.type, '| source type:', fileBlock.source.type, '| source media_type:', fileBlock.source.media_type)
+    console.log('[parse-labs] fileBlock type:', fileBlock.type, '| source media_type:', fileBlock.source.media_type)
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-5',
@@ -85,29 +82,24 @@ export async function POST(req: NextRequest) {
     })
 
     console.log('[parse-labs] Claude stop_reason:', response.stop_reason)
-    console.log('[parse-labs] Claude response content blocks:', response.content.length)
     const raw = response.content[0].type === 'text' ? response.content[0].text : '{}'
     console.log('[parse-labs] Claude raw response:\n', raw)
     const clean = raw.replace(/```json|```/g, '').trim()
-    console.log('[parse-labs] Cleaned JSON:\n', clean)
 
     let parsed
     try {
       parsed = JSON.parse(clean)
     } catch {
-      console.error('[parse-labs] JSON.parse failed, attempting record extraction from truncated response')
-      // Extract individual record objects via regex when the outer JSON is truncated
+      console.error('[parse-labs] JSON.parse failed, attempting fallback extraction')
       const recordMatches = clean.matchAll(/\{[^{}]*"date"\s*:[^{}]*\{[^{}]*\}[^{}]*\}/gs)
       const extractedRecords = []
       for (const match of recordMatches) {
         try {
           const rec = JSON.parse(match[0])
           if (rec.date) extractedRecords.push(rec)
-        } catch {
-          // skip unparseable fragment
-        }
+        } catch { /* skip */ }
       }
-      console.log('[parse-labs] Extracted records via fallback regex:', extractedRecords.length)
+      console.log('[parse-labs] Fallback extracted records:', extractedRecords.length)
       if (extractedRecords.length === 0) {
         return NextResponse.json({ error: 'Failed to parse response', raw }, { status: 500 })
       }
@@ -116,17 +108,16 @@ export async function POST(req: NextRequest) {
 
     console.log('[parse-labs] parsed.records count:', parsed.records?.length ?? 0)
 
-    // Обрабатываем массив записей
+    // Build normalized records — biomarkers array + legacy found map
     const records = (parsed.records || []).map(record => {
-      const found: Record<string, number> = {}
-      let count = 0
-      for (const [key, val] of Object.entries(record.found || {})) {
-        if (val !== null && val !== undefined) {
-          found[key] = val as number
-          count++
-        }
+      const biomarkers = (record.biomarkers || []).filter(b => b.value !== null && b.value !== undefined)
+      return {
+        date: record.date,
+        lab_name: record.lab_name,
+        biomarkers,
+        count: biomarkers.length,
+        found: Object.fromEntries(biomarkers.filter(b => LEGACY_KEYS.has(b.key)).map(b => [b.key, b.value])),
       }
-      return { date: record.date, lab_name: record.lab_name, found, count }
     }).filter(r => r.count > 0)
 
     const totalCount = records.reduce((sum, r) => sum + r.count, 0)
