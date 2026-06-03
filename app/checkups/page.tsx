@@ -399,6 +399,8 @@ function CheckupsContent() {
         })
         const data = await res.json()
 
+        console.log('[handleUpload] data.records:', JSON.stringify(data.records, null, 2))
+
         if (data.records && data.records.length > 0) {
           // Сохраняем все записи по датам
           for (const record of data.records) {
@@ -428,7 +430,7 @@ function CheckupsContent() {
           if (last.lab_name) setLabName(last.lab_name)
           if (last.date) setDate(last.date)
 
-          // Обновляем историю
+          // Обновляем историю после сохранения всех записей
           const { data: hist } = await supabase
             .from('health_metrics')
             .select('*')
@@ -437,10 +439,12 @@ function CheckupsContent() {
             .limit(50)
           setHistory(hist || [])
 
+          const savedDates = data.records.map(r => r.date).join(', ')
           setUploadResult({
             success: true,
             count: data.total_count,
             dates: data.dates_found,
+            savedDates,
             text: data.summary,
           })
         } else {
@@ -544,7 +548,7 @@ function CheckupsContent() {
               {uploadResult && (
                 <div style={{ marginTop:10, padding:'10px 12px', borderRadius:10, background: uploadResult.success ? 'rgba(122,184,122,0.08)' : 'rgba(224,112,112,0.08)', border:`1px solid ${uploadResult.success ? 'rgba(122,184,122,0.25)' : 'rgba(224,112,112,0.2)'}`, fontSize:12, color: uploadResult.success ? s.green : s.red, lineHeight:1.6 }}>
                   {uploadResult.success
-                    ? `✓ ${uploadResult.dates > 1 ? `Найдено ${uploadResult.dates} записей за разные даты, ${uploadResult.count} показателей. В форме показана последняя. ` : `Найдено ${uploadResult.count} показателей. `}`
+                    ? `✓ Сохранено ${uploadResult.dates} ${uploadResult.dates === 1 ? 'запись' : 'записей'}, ${uploadResult.count} показателей. Даты: ${uploadResult.savedDates}. `
                     : ''
                   }{uploadResult.text}
                 </div>
