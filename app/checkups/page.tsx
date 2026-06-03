@@ -383,13 +383,15 @@ function CheckupsContent() {
 
   async function handleUpload(file) {
     if (!file) return
+    console.log('[handleUpload] file.name:', file.name, '| file.type:', file.type, '| file.size:', file.size)
     setUploading(true)
     setUploadResult(null)
     try {
       const reader = new FileReader()
       reader.onload = async (e) => {
         const base64 = e.target.result.split(',')[1]
-        const mediaType = file.type || 'image/jpeg'
+        const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
+        const mediaType = isPdf ? 'application/pdf' : (file.type || 'image/jpeg')
         const res = await fetch('/api/parse-labs', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
