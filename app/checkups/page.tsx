@@ -103,6 +103,8 @@ const METRICS = [
   },
 ]
 
+const ALL_FIELDS = METRICS.flatMap(g => g.fields)
+
 function PrismModal({ field, onClose }) {
   const [tab, setTab] = useState('science')
   const tabs = [
@@ -128,9 +130,7 @@ function PrismModal({ field, onClose }) {
             </div>
           ))}
         </div>
-        <div style={{ fontSize:13, color:s.dim, lineHeight:1.8 }}>
-          {field[tab]}
-        </div>
+        <div style={{ fontSize:13, color:s.dim, lineHeight:1.8 }}>{field[tab]}</div>
       </div>
     </div>
   )
@@ -138,11 +138,10 @@ function PrismModal({ field, onClose }) {
 
 function getStatus(key, value) {
   if (!value) return null
-  const field = METRICS.flatMap(g => g.fields).find(f => f.key === key)
+  const field = ALL_FIELDS.find(f => f.key === key)
   if (!field) return null
   const v = parseFloat(value)
   const opt = field.optimal
-
   const optMatch = opt.match(/^([\d.]+)–([\d.]+)$/)
   if (optMatch) {
     const lo = parseFloat(optMatch[1]), hi = parseFloat(optMatch[2])
@@ -173,6 +172,181 @@ const STATUS_COLORS = {
   danger:  { bg:'rgba(224,112,112,0.1)', border:'rgba(224,112,112,0.25)', text:'#e07070', dot:'#e07070' },
 }
 
+// ─── Мини-график динамики ─────────────────────────────────────
+
+function SparkLine({ points, optimal, width = 80, height = 32 }) {
+  if (!points || points.length < 2) return null
+  const vals = points.map(p => p.value)
+  const min = Math.min(...vals)
+  const max = Math.max(...vals)
+  const range = max - min || 1
+  const pad = 3
+  const w = width - pad * 2
+  const h = height - pad * 2
+  const coords = points.map((p, i) => {
+    const x = pad + (i / (points.length - 1)) * w
+    const y = pad + (1 - (p.value - min) / range) * h
+    return [x, y]
+  })
+  const path = coords.map((c, i) => `${i === 0 ? 'M' : 'L'}${c[0].toFixed(1)},${c[1].toFixed(1)}`).join(' ')
+  const last = coords[coords.length - 1]
+  const lastVal = vals[vals.length - 1]
+  const status = getStatus(points[0]?.key, lastVal)
+  const color = status ? STATUS_COLORS[status].dot : s.dim
+  return (
+    <svg width={width} height={height} style={{ flexShrink:0 }}>
+      <path d={path} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.7" />
+      <circle cx={last[0]} cy={last[1]} r="3" fill={color} />
+    </svg>
+  )
+}
+
+// ─── Вкладка Динамика ─────────────────────────────────────────
+
+function DynamicsTab({ history }) {
+  const [selectedKey, setSelectedKey] = useState(null)
+
+  // Собираем тренды по каждому биомаркеру
+  const trends = ALL_FIELDS.map(field => {
+    const points = history
+      .filter(row => row[field.key] != null)
+      .map(row => ({ date: row.date, value: row[field.key], key: field.key }))
+      .sort((a, b) => a.date.localeCompare(b.date))
+    if (points.length === 0) return null
+    const latest = points[points.length - 1].value
+    const first = points[0].value
+    const change = points.length > 1 ? ((latest - first) / Math.abs(first) * 100) : 0
+    const trend = Math.abs(change) < 5 ? 'stable' : change > 0 ? 'rising' : 'falling'
+    const status = getStatus(field.key, latest)
+    return { field, points, latest, change, trend, status }
+  }).filter(Boolean)
+
+  if (trends.length === 0) {
+    return (
+      <div style={{ textAlign:'center', padding:'40px 20px', border:`1px dashed ${s.border}`, borderRadius:14 }}>
+        <div style={{ fontSize:14, color:s.dim }}>Нет данных для динамики</div>
+        <div style={{ fontSize:12, color:s.muted, marginTop:8 }}>Загрузи анализы с несколькими датами</div>
+      </div>
+    )
+  }
+
+  const selected = selectedKey ? trends.find(t => t.field.key === selectedKey) : null
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+
+      {/* Детальный график выбранного показателя */}
+      {selected && (
+        <div style={{ background:s.surface, border:`1px solid ${s.border2}`, borderRadius:14, padding:16, animation:'fadeUp 0.2s forwards' }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:12 }}>
+            <div>
+              <div style={{ fontSize:14, fontWeight:500, color:s.text }}>{selected.field.label}</div>
+              <div style={{ fontSize:11, color:s.dim, marginTop:2 }}>Оптимум: {selected.field.optimal} {selected.field.unit}</div>
+            </div>
+            <button onClick={() => setSelectedKey(null)} style={{ fontSize:18, color:s.dim, background:'none', border:'none', cursor:'pointer' }}>×</button>
+          </div>
+
+          {/* Большой график */}
+          <div style={{ position:'relative', height:120, marginBottom:12 }}>
+            {(() => {
+              const pts = selected.points
+              const vals = pts.map(p => p.value)
+              const min = Math.min(...vals) * 0.9
+              const max = Math.max(...vals) * 1.1
+              const range = max - min || 1
+              const W = 520, H = 100, pad = 20
+              const w = W - pad * 2, h = H - pad * 2
+              const coords = pts.map((p, i) => ({
+                x: pad + (i / (pts.length - 1 || 1)) * w,
+                y: pad + (1 - (p.value - min) / range) * h,
+                ...p
+              }))
+              const path = coords.map((c, i) => `${i === 0 ? 'M' : 'L'}${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ')
+              const sc = selected.status ? STATUS_COLORS[selected.status] : { dot: s.dim }
+              return (
+                <svg viewBox={`0 0 ${W} ${H}`} style={{ width:'100%', height:'100%' }}>
+                  <path d={path} fill="none" stroke={sc.dot} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  {coords.map((c, i) => (
+                    <g key={i}>
+                      <circle cx={c.x} cy={c.y} r="4" fill={sc.dot} />
+                      <text x={c.x} y={H - 4} textAnchor="middle" fontSize="9" fill={s.dim}>
+                        {new Date(c.date).toLocaleDateString('ru', { month:'short', year:'2-digit' })}
+                      </text>
+                      <text x={c.x} y={c.y - 8} textAnchor="middle" fontSize="9" fill={s.text}>
+                        {c.value}
+                      </text>
+                    </g>
+                  ))}
+                </svg>
+              )
+            })()}
+          </div>
+
+          {/* Все точки */}
+          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+            {[...selected.points].reverse().map((p, i) => {
+              const st = getStatus(selected.field.key, p.value)
+              const sc = st ? STATUS_COLORS[st] : { bg: s.surface2, border: s.border, text: s.dim }
+              return (
+                <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'6px 10px', borderRadius:8, background:sc.bg, border:`1px solid ${sc.border}` }}>
+                  <span style={{ fontSize:12, color:s.dim }}>
+                    {new Date(p.date).toLocaleDateString('ru', { day:'numeric', month:'long', year:'numeric' })}
+                  </span>
+                  <span style={{ fontSize:13, fontWeight:500, color:sc.text }}>{p.value} {selected.field.unit}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Список всех показателей с мини-графиками */}
+      {METRICS.map(group => {
+        const groupTrends = trends.filter(t => group.fields.find(f => f.key === t.field.key))
+        if (groupTrends.length === 0) return null
+        return (
+          <div key={group.group} style={{ background:s.surface, border:`1px solid ${s.border}`, borderRadius:14, padding:16 }}>
+            <div style={{ fontSize:11, color:s.muted, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:12 }}>
+              {group.emoji} {group.group}
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+              {groupTrends.map(t => {
+                const sc = t.status ? STATUS_COLORS[t.status] : { bg: s.surface2, border: s.border, text: s.dim, dot: s.dim }
+                const trendIcon = t.trend === 'rising' ? '↑' : t.trend === 'falling' ? '↓' : '→'
+                const isSelected = selectedKey === t.field.key
+                return (
+                  <div
+                    key={t.field.key}
+                    onClick={() => setSelectedKey(isSelected ? null : t.field.key)}
+                    style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 12px', borderRadius:10, background: isSelected ? sc.bg : s.surface2, border:`1px solid ${isSelected ? sc.border : s.border}`, cursor:'pointer', transition:'all 0.15s' }}
+                  >
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:12, color:s.dim, marginBottom:2 }}>{t.field.label}</div>
+                      <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                        <span style={{ fontSize:15, fontWeight:500, color:sc.text }}>{t.latest}</span>
+                        <span style={{ fontSize:11, color:s.muted }}>{t.field.unit}</span>
+                        {t.points.length > 1 && (
+                          <span style={{ fontSize:11, color: t.trend === 'rising' ? s.green : t.trend === 'falling' ? s.red : s.dim }}>
+                            {trendIcon} {Math.abs(t.change).toFixed(0)}%
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <SparkLine points={t.points} optimal={t.field.optimal} />
+                    <div style={{ width:6, height:6, borderRadius:'50%', background:sc.dot, flexShrink:0 }} />
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── Основной компонент ───────────────────────────────────────
+
 function CheckupsContent() {
   const router = useRouter()
   const [user, setUser] = useState(null)
@@ -196,11 +370,10 @@ function CheckupsContent() {
         const { data: authData } = await supabase.auth.getSession()
         if (!authData?.session) { router.push('/'); return }
         setUser(authData.session.user)
-
         const { data: hist } = await supabase
           .from('health_metrics').select('*')
           .eq('user_id', authData.session.user.id)
-          .order('date', { ascending: false }).limit(10)
+          .order('date', { ascending: false }).limit(50)
         setHistory(hist || [])
       } catch(e) { console.error(e) }
       finally { setLoading(false) }
@@ -223,19 +396,56 @@ function CheckupsContent() {
           body: JSON.stringify({ fileBase64: base64, mediaType }),
         })
         const data = await res.json()
-        if (data.found && data.count > 0) {
+
+        if (data.records && data.records.length > 0) {
+          // Сохраняем все записи по датам
+          for (const record of data.records) {
+            const payload = {
+              user_id: user.id,
+              date: record.date,
+              lab_name: record.lab_name || labName || null,
+              notes: notes || null,
+            }
+            Object.entries(record.found).forEach(([key, val]) => {
+              if (val !== null) payload[key] = val
+            })
+            await supabase
+              .from('health_metrics')
+              .upsert(payload, { onConflict: 'user_id,date' })
+          }
+
+          // Показываем последнюю запись в форме
+          const last = data.records[data.records.length - 1]
           setValues(prev => {
             const updated = { ...prev }
-            Object.entries(data.found).forEach(([key, val]) => {
+            Object.entries(last.found).forEach(([key, val]) => {
               if (val !== null) updated[key] = String(val)
             })
             return updated
           })
-          if (data.lab_name) setLabName(data.lab_name)
-          if (data.date) setDate(data.date)
-          setUploadResult({ success: true, count: data.count, text: data.raw_text })
+          if (last.lab_name) setLabName(last.lab_name)
+          if (last.date) setDate(last.date)
+
+          // Обновляем историю
+          const { data: hist } = await supabase
+            .from('health_metrics')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('date', { ascending: false })
+            .limit(50)
+          setHistory(hist || [])
+
+          setUploadResult({
+            success: true,
+            count: data.total_count,
+            dates: data.dates_found,
+            text: data.summary,
+          })
         } else {
-          setUploadResult({ success: false, text: 'Не удалось распознать показатели. Попробуй другое фото или PDF.' })
+          setUploadResult({
+            success: false,
+            text: 'Не удалось распознать показатели. Попробуй другой файл.',
+          })
         }
         setUploading(false)
       }
@@ -250,13 +460,13 @@ function CheckupsContent() {
     if (!user) return
     setSaving(true)
     const payload = { user_id: user.id, date, lab_name: labName || null, notes: notes || null }
-    METRICS.flatMap(g => g.fields).forEach(f => {
+    ALL_FIELDS.forEach(f => {
       if (values[f.key]) payload[f.key] = parseFloat(values[f.key])
     })
     const { error } = await supabase.from('health_metrics').upsert(payload, { onConflict: 'user_id,date' })
     if (!error) {
       setSaved(true)
-      const { data: hist } = await supabase.from('health_metrics').select('*').eq('user_id', user.id).order('date', { ascending: false }).limit(10)
+      const { data: hist } = await supabase.from('health_metrics').select('*').eq('user_id', user.id).order('date', { ascending: false }).limit(50)
       setHistory(hist || [])
     }
     setSaving(false)
@@ -278,26 +488,28 @@ function CheckupsContent() {
         <button onClick={() => router.push('/dashboard')} style={{ fontSize:13, color:s.dim, background:'none', border:'none', cursor:'pointer' }}>← Dashboard</button>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
           <span style={{ fontFamily:"'Playfair Display',serif", fontSize:16, color:s.accent }}>🩺 Чекапы</span>
-          <span style={{ fontSize:10, padding:'2px 8px', borderRadius:100, background:'rgba(200,184,154,0.1)', border:`1px solid rgba(200,184,154,0.2)`, color:s.accent }}>В разработке</span>
         </div>
-        <div style={{ width:60 }} />
+        <button onClick={() => router.push('/assistant')} style={{ fontSize:12, color:s.info, background:'rgba(110,168,200,0.08)', border:`1px solid rgba(110,168,200,0.2)`, borderRadius:8, padding:'5px 10px', cursor:'pointer' }}>
+          Обсудить →
+        </button>
       </header>
 
       <div style={{ margin:'16px 16px 0', padding:'14px 16px', background:'rgba(110,168,200,0.06)', border:`1px solid rgba(110,168,200,0.15)`, borderRadius:12, fontSize:12, color:'#6ea8c8', lineHeight:1.7 }}>
-        <strong>Образовательный инструмент, не медицинский сервис.</strong> Загружай данные своих анализов чтобы видеть динамику и понимать что они означают. Любые решения обсуждай с врачом.<br/>
-        <span style={{ color:s.dim }}>Регулярные чекапы — один из самых недооценённых инструментов превентивной медицины. Большинство хронических заболеваний развиваются годами без симптомов.</span>
+        <strong>Образовательный инструмент, не медицинский сервис.</strong> Загружай данные своих анализов чтобы видеть динамику и понимать что они означают. Любые решения обсуждай с врачом.
       </div>
 
       <div style={{ maxWidth:560, margin:'0 auto', padding:'16px 16px' }}>
 
+        {/* Tabs */}
         <div style={{ display:'flex', gap:4, marginBottom:20, background:s.surface, borderRadius:12, padding:4, border:`1px solid ${s.border}` }}>
-          {[['input','📥 Ввести данные'],['history','📊 История']].map(([t,l]) => (
+          {[['input','📥 Ввести'],['history','📋 История'],['dynamics','📈 Динамика']].map(([t,l]) => (
             <div key={t} onClick={() => setTab(t)} style={{ flex:1, padding:'8px', borderRadius:8, fontSize:13, textAlign:'center', cursor:'pointer', background:tab===t ? s.surface2 : 'transparent', color:tab===t ? s.text : s.dim, fontWeight:tab===t ? 500 : 300, transition:'all 0.15s' }}>
               {l}
             </div>
           ))}
         </div>
 
+        {/* ── Ввод ── */}
         {tab === 'input' && (
           <div style={{ display:'flex', flexDirection:'column', gap:14, animation:'fadeUp 0.3s forwards' }}>
 
@@ -316,31 +528,27 @@ function CheckupsContent() {
 
             <div style={{ background:s.surface, border:`1px solid ${s.border}`, borderRadius:14, padding:'16px' }}>
               <div style={{ fontSize:11, color:s.muted, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:12 }}>📎 Загрузить анализы</div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*,.pdf,application/pdf"
-                style={{ display:'none' }}
-                onChange={e => e.target.files?.[0] && handleUpload(e.target.files[0])}
-              />
+              <input ref={fileInputRef} type="file" accept="image/*,.pdf,application/pdf" style={{ display:'none' }} onChange={e => e.target.files?.[0] && handleUpload(e.target.files[0])} />
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading}
                 style={{ width:'100%', padding:'12px', borderRadius:10, background: uploading ? s.surface2 : 'rgba(110,168,200,0.1)', border:`1px solid ${uploading ? s.border : 'rgba(110,168,200,0.25)'}`, color: uploading ? s.muted : '#6ea8c8', fontSize:13, cursor: uploading ? 'not-allowed' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8, transition:'all 0.2s' }}
               >
-                {uploading ? (
-                  <><span style={{ animation:'spin 1s linear infinite', display:'inline-block' }}>◌</span> Распознаю показатели...</>
-                ) : (
-                  <><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Фото или PDF с анализами</>
-                )}
+                {uploading
+                  ? <><span style={{ animation:'spin 1s linear infinite', display:'inline-block' }}>◌</span> Распознаю показатели...</>
+                  : <><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Фото или PDF с анализами</>
+                }
               </button>
               {uploadResult && (
                 <div style={{ marginTop:10, padding:'10px 12px', borderRadius:10, background: uploadResult.success ? 'rgba(122,184,122,0.08)' : 'rgba(224,112,112,0.08)', border:`1px solid ${uploadResult.success ? 'rgba(122,184,122,0.25)' : 'rgba(224,112,112,0.2)'}`, fontSize:12, color: uploadResult.success ? s.green : s.red, lineHeight:1.6 }}>
-                  {uploadResult.success ? `✓ Найдено ${uploadResult.count} показателей. ` : ''}{uploadResult.text}
+                  {uploadResult.success
+                    ? `✓ ${uploadResult.dates > 1 ? `Найдено ${uploadResult.dates} записей за разные даты, ${uploadResult.count} показателей. В форме показана последняя. ` : `Найдено ${uploadResult.count} показателей. `}`
+                    : ''
+                  }{uploadResult.text}
                 </div>
               )}
               <div style={{ marginTop:8, fontSize:11, color:s.muted, lineHeight:1.6 }}>
-                Загрузи фото бланка или PDF из лаборатории — ИИ распознает показатели и заполнит форму. Проверь и скорректируй при необходимости.
+                Загрузи фото бланка или PDF из лаборатории — ИИ распознает все даты и заполнит динамику.
               </div>
             </div>
 
@@ -362,14 +570,7 @@ function CheckupsContent() {
                             <span style={{ fontSize:10, color:s.muted, marginLeft:'auto' }}>{field.optimal} {field.unit}</span>
                           </div>
                           <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                            <input
-                              type="number"
-                              step="0.1"
-                              value={values[field.key] || ''}
-                              onChange={e => { setValues(v => ({...v, [field.key]: e.target.value})); setSaved(false) }}
-                              placeholder="—"
-                              style={{ flex:1, background: sc ? sc.bg : s.surface2, border:`1px solid ${sc ? sc.border : s.border}`, borderRadius:8, padding:'8px 10px', color: sc ? sc.text : s.text, fontSize:13, outline:'none' }}
-                            />
+                            <input type="number" step="0.1" value={values[field.key] || ''} onChange={e => { setValues(v => ({...v, [field.key]: e.target.value})); setSaved(false) }} placeholder="—" style={{ flex:1, background: sc ? sc.bg : s.surface2, border:`1px solid ${sc ? sc.border : s.border}`, borderRadius:8, padding:'8px 10px', color: sc ? sc.text : s.text, fontSize:13, outline:'none' }} />
                             <span style={{ fontSize:11, color:s.muted, width:60, flexShrink:0 }}>{field.unit}</span>
                             {sc && <div style={{ width:8, height:8, borderRadius:'50%', background:sc.dot, flexShrink:0 }} />}
                           </div>
@@ -389,6 +590,7 @@ function CheckupsContent() {
           </div>
         )}
 
+        {/* ── История ── */}
         {tab === 'history' && (
           <div style={{ display:'flex', flexDirection:'column', gap:10, animation:'fadeUp 0.3s forwards' }}>
             {history.length === 0 ? (
@@ -404,9 +606,9 @@ function CheckupsContent() {
                   {h.lab_name && <div style={{ fontSize:11, color:s.dim }}>{h.lab_name}</div>}
                 </div>
                 <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
-                  {METRICS.flatMap(g => g.fields).filter(f => h[f.key] != null).map(f => {
+                  {ALL_FIELDS.filter(f => h[f.key] != null).map(f => {
                     const status = getStatus(f.key, h[f.key])
-                    const sc = status ? STATUS_COLORS[status] : { bg:s.surface2, border:s.border, text:s.dim, dot:s.muted }
+                    const sc = status ? STATUS_COLORS[status] : { bg:s.surface2, border:s.border, text:s.dim }
                     return (
                       <div key={f.key} style={{ padding:'4px 10px', borderRadius:8, background:sc.bg, border:`1px solid ${sc.border}`, fontSize:11, color:sc.text }}>
                         {f.label}: <strong>{h[f.key]}</strong>
@@ -417,6 +619,13 @@ function CheckupsContent() {
                 {h.notes && <div style={{ marginTop:10, fontSize:12, color:s.dim }}>{h.notes}</div>}
               </div>
             ))}
+          </div>
+        )}
+
+        {/* ── Динамика ── */}
+        {tab === 'dynamics' && (
+          <div style={{ animation:'fadeUp 0.3s forwards' }}>
+            <DynamicsTab history={history} />
           </div>
         )}
 
