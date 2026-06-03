@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, Suspense } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { VoiceButton } from '@/lib/VoiceButton'
 
 const WELLBEING_DIMS = [
   { key: 'energy', label: 'Энергия', emoji: '⚡', color: '#c8a86e', question: 'Как физически ощущается тело?',
@@ -33,25 +34,7 @@ function InfoModal({ dim, onClose }) {
 function CheckinContent() {
   const router = useRouter()
   const [step, setStep] = useState('loading') // loading | sprint | physio | done
-  const [listening, setListening] = useState(false)
-  const recognitionRef = useRef(null)
 
-  function startVoice(setter) {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!SpeechRecognition) return
-    const rec = new SpeechRecognition()
-    rec.lang = 'ru-RU'
-    rec.continuous = false
-    rec.interimResults = false
-    rec.onstart = () => setListening(true)
-    rec.onend = () => setListening(false)
-    rec.onresult = (e) => {
-      setter(e.results[0][0].transcript)
-    }
-    rec.onerror = () => setListening(false)
-    recognitionRef.current = rec
-    rec.start()
-  }
   const [user, setUser] = useState(null)
   const [sprint, setSprint] = useState(null)
   const [infoModal, setInfoModal] = useState(null)
@@ -248,9 +231,7 @@ function CheckinContent() {
                     <div style={{ fontSize:13, color:s.dim, marginBottom:8 }}>Что помешало?</div>
                     <div style={{ display:'flex', gap:8 }}>
                     <input value={barrier} onChange={e => setBarrier(e.target.value)} placeholder="Коротко..." style={{ flex:1, background:s.surface, border:`1px solid rgba(255,255,255,0.1)`, borderRadius:10, padding:'10px 12px', color:s.text, fontFamily:"'DM Sans',sans-serif", fontSize:13, outline:'none' }} />
-                    <button onClick={() => startVoice(setBarrier)} style={{ width:40, height:40, borderRadius:10, background: listening ? 'rgba(224,112,112,0.15)' : s.surface2, border:`1px solid ${listening ? 'rgba(224,112,112,0.3)' : 'rgba(255,255,255,0.07)'}`, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill={listening ? '#e07070' : '#666'}><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg>
-                    </button>
+                    <VoiceButton size={40} onResult={(text) => setBarrier(text)} />
                   </div>
                   </div>
                 )}
