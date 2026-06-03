@@ -429,6 +429,8 @@ function CheckupsContent() {
 
         console.log('[handleUpload] data.records:', JSON.stringify(data.records, null, 2))
 
+        console.log('[handleUpload] user.id at save time:', user?.id ?? 'NULL — user not set!')
+
         if (data.records && data.records.length > 0) {
           for (const record of data.records) {
             const resolvedLabName = record.lab_name || labName || null
@@ -447,10 +449,12 @@ function CheckupsContent() {
                 ref_max: b.ref_max ?? null,
                 is_flagged: b.is_flagged ?? false,
               }))
-              const { error } = await supabase
+              console.log(`[handleUpload] upserting ${rows.length} rows for date=${record.date}`)
+              const { data: upsertData, error: upsertError } = await supabase
                 .from('health_biomarkers')
                 .upsert(rows, { onConflict: 'user_id,date,key' })
-              if (error) console.error('[handleUpload] health_biomarkers error:', error)
+                .select()
+              console.log(`[handleUpload] health_biomarkers result for date=${record.date} | error:`, upsertError, '| rows returned:', upsertData?.length ?? 0)
             }
 
             // Save standard 22 fields to health_metrics for backward compat
