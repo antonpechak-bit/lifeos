@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { VoiceButton } from '@/lib/VoiceButton'
 
 const LAYER_COLORS = {
   sleep: '#6ea8c8', ans: '#a86ec8', movement: '#c8a86e',
@@ -63,30 +64,7 @@ function PrioritiesContent() {
   const [sprintSaved, setSprintSaved] = useState(false)
   const messagesEndRef = useRef(null)
   const taRef = useRef(null)
-  const recognitionRef = useRef(null)
-  const [listening, setListening] = useState(false)
 
-  function startVoice() {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!SR) return
-    const rec = new SR()
-    rec.lang = 'ru-RU'
-    rec.continuous = false
-    rec.interimResults = false
-    rec.onstart = () => setListening(true)
-    rec.onend = () => setListening(false)
-    rec.onresult = (e) => {
-      const t = e.results[0][0].transcript
-      setInput(prev => prev ? prev + ' ' + t : t)
-      if (taRef.current) {
-        taRef.current.style.height = 'auto'
-        taRef.current.style.height = Math.min(taRef.current.scrollHeight, 120) + 'px'
-      }
-    }
-    rec.onerror = () => setListening(false)
-    recognitionRef.current = rec
-    rec.start()
-  }
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }) => {
@@ -342,11 +320,15 @@ function PrioritiesContent() {
                   rows={1}
                   style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: 'var(--text,#e8e6e0)', fontFamily: "'DM Sans',sans-serif", fontSize: 13, lineHeight: 1.5, padding: '10px 12px', resize: 'none', maxHeight: 120, overflowY: 'auto' }}
                 />
-                <button
-                  onClick={listening ? () => { recognitionRef.current?.stop(); setListening(false) } : startVoice}
-                  style={{ width:32, height:32, margin:'5px 0 5px 5px', borderRadius:8, background: listening ? 'rgba(224,112,112,0.15)' : 'var(--surface2,#1a1a1e)', border:`1px solid ${listening ? 'rgba(224,112,112,0.35)' : 'rgba(255,255,255,0.07)'}`, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill={listening ? '#e07070' : '#555'}><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg>
-                </button>
+                <div style={{ margin:'5px 0 5px 5px' }}>
+                  <VoiceButton size={32} onResult={(text) => {
+                    setInput(prev => prev ? prev + ' ' + text : text)
+                    if (taRef.current) {
+                      taRef.current.style.height = 'auto'
+                      taRef.current.style.height = Math.min(taRef.current.scrollHeight, 120) + 'px'
+                    }
+                  }} />
+                </div>
                 <button
                   onClick={sendMessage}
                   disabled={chatLoading || !input.trim()}
@@ -365,3 +347,4 @@ function PrioritiesContent() {
 export default function PrioritiesPage() {
   return <Suspense><PrioritiesContent /></Suspense>
 }
+
