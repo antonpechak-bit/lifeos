@@ -62,9 +62,13 @@ export async function POST(req: NextRequest) {
 
     const isPdf = mediaType === 'application/pdf'
 
+    console.log('[parse-labs] mediaType:', mediaType, '| isPdf:', isPdf, '| data length:', data?.length)
+
     const fileBlock = isPdf
       ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data } }
       : { type: 'image', source: { type: 'base64', media_type: mediaType, data } }
+
+    console.log('[parse-labs] fileBlock type:', fileBlock.type, '| source type:', fileBlock.source.type, '| source media_type:', fileBlock.source.media_type)
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-5',
@@ -75,15 +79,22 @@ export async function POST(req: NextRequest) {
       }],
     })
 
+    console.log('[parse-labs] Claude stop_reason:', response.stop_reason)
+    console.log('[parse-labs] Claude response content blocks:', response.content.length)
     const raw = response.content[0].type === 'text' ? response.content[0].text : '{}'
+    console.log('[parse-labs] Claude raw response:\n', raw)
     const clean = raw.replace(/```json|```/g, '').trim()
+    console.log('[parse-labs] Cleaned JSON:\n', clean)
 
     let parsed
     try {
       parsed = JSON.parse(clean)
     } catch {
+      console.error('[parse-labs] JSON.parse failed on:', clean)
       return NextResponse.json({ error: 'Failed to parse response', raw }, { status: 500 })
     }
+
+    console.log('[parse-labs] parsed.records count:', parsed.records?.length ?? 0)
 
     // Обрабатываем массив записей
     const records = (parsed.records || []).map(record => {
