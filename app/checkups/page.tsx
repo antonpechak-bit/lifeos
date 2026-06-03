@@ -142,9 +142,7 @@ function getStatus(key, value) {
   if (!field) return null
   const v = parseFloat(value)
   const opt = field.optimal
-  const warn = field.warning
 
-  // Simple range check based on optimal string
   const optMatch = opt.match(/^([\d.]+)–([\d.]+)$/)
   if (optMatch) {
     const lo = parseFloat(optMatch[1]), hi = parseFloat(optMatch[2])
@@ -222,11 +220,10 @@ function CheckupsContent() {
         const res = await fetch('/api/parse-labs', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageBase64: base64, mediaType }),
+          body: JSON.stringify({ fileBase64: base64, mediaType }),
         })
         const data = await res.json()
         if (data.found && data.count > 0) {
-          // Auto-fill found values
           setValues(prev => {
             const updated = { ...prev }
             Object.entries(data.found).forEach(([key, val]) => {
@@ -238,13 +235,13 @@ function CheckupsContent() {
           if (data.date) setDate(data.date)
           setUploadResult({ success: true, count: data.count, text: data.raw_text })
         } else {
-          setUploadResult({ success: false, text: 'Не удалось распознать показатели. Попробуй другое фото.' })
+          setUploadResult({ success: false, text: 'Не удалось распознать показатели. Попробуй другое фото или PDF.' })
         }
         setUploading(false)
       }
       reader.readAsDataURL(file)
     } catch(e) {
-      setUploadResult({ success: false, text: 'Ошибка при обработке изображения.' })
+      setUploadResult({ success: false, text: 'Ошибка при обработке файла.' })
       setUploading(false)
     }
   }
@@ -286,7 +283,6 @@ function CheckupsContent() {
         <div style={{ width:60 }} />
       </header>
 
-      {/* Disclaimer */}
       <div style={{ margin:'16px 16px 0', padding:'14px 16px', background:'rgba(110,168,200,0.06)', border:`1px solid rgba(110,168,200,0.15)`, borderRadius:12, fontSize:12, color:'#6ea8c8', lineHeight:1.7 }}>
         <strong>Образовательный инструмент, не медицинский сервис.</strong> Загружай данные своих анализов чтобы видеть динамику и понимать что они означают. Любые решения обсуждай с врачом.<br/>
         <span style={{ color:s.dim }}>Регулярные чекапы — один из самых недооценённых инструментов превентивной медицины. Большинство хронических заболеваний развиваются годами без симптомов.</span>
@@ -294,7 +290,6 @@ function CheckupsContent() {
 
       <div style={{ maxWidth:560, margin:'0 auto', padding:'16px 16px' }}>
 
-        {/* Tabs */}
         <div style={{ display:'flex', gap:4, marginBottom:20, background:s.surface, borderRadius:12, padding:4, border:`1px solid ${s.border}` }}>
           {[['input','📥 Ввести данные'],['history','📊 История']].map(([t,l]) => (
             <div key={t} onClick={() => setTab(t)} style={{ flex:1, padding:'8px', borderRadius:8, fontSize:13, textAlign:'center', cursor:'pointer', background:tab===t ? s.surface2 : 'transparent', color:tab===t ? s.text : s.dim, fontWeight:tab===t ? 500 : 300, transition:'all 0.15s' }}>
@@ -306,7 +301,6 @@ function CheckupsContent() {
         {tab === 'input' && (
           <div style={{ display:'flex', flexDirection:'column', gap:14, animation:'fadeUp 0.3s forwards' }}>
 
-            {/* Date and lab */}
             <div style={{ background:s.surface, border:`1px solid ${s.border}`, borderRadius:14, padding:'16px' }}>
               <div style={{ display:'flex', gap:10 }}>
                 <div style={{ flex:1 }}>
@@ -320,13 +314,12 @@ function CheckupsContent() {
               </div>
             </div>
 
-            {/* Upload photo */}
             <div style={{ background:s.surface, border:`1px solid ${s.border}`, borderRadius:14, padding:'16px' }}>
-              <div style={{ fontSize:11, color:s.muted, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:12 }}>📸 Загрузить фото анализов</div>
+              <div style={{ fontSize:11, color:s.muted, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:12 }}>📎 Загрузить анализы</div>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*,.pdf"
+                accept="image/*,.pdf,application/pdf"
                 style={{ display:'none' }}
                 onChange={e => e.target.files?.[0] && handleUpload(e.target.files[0])}
               />
@@ -338,7 +331,7 @@ function CheckupsContent() {
                 {uploading ? (
                   <><span style={{ animation:'spin 1s linear infinite', display:'inline-block' }}>◌</span> Распознаю показатели...</>
                 ) : (
-                  <><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Загрузить фото или PDF</>
+                  <><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Фото или PDF с анализами</>
                 )}
               </button>
               {uploadResult && (
@@ -347,11 +340,10 @@ function CheckupsContent() {
                 </div>
               )}
               <div style={{ marginTop:8, fontSize:11, color:s.muted, lineHeight:1.6 }}>
-                Сфотографируй бланк с результатами — ИИ автоматически распознает показатели и заполнит форму. Проверь и скорректируй при необходимости.
+                Загрузи фото бланка или PDF из лаборатории — ИИ распознает показатели и заполнит форму. Проверь и скорректируй при необходимости.
               </div>
             </div>
 
-            {/* Metric groups */}
             {METRICS.map(group => (
               <div key={group.group} style={{ background:s.surface, border:`1px solid ${s.border}`, borderRadius:14, padding:'16px' }}>
                 <div style={{ fontSize:11, color:s.muted, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:14 }}>
@@ -389,7 +381,6 @@ function CheckupsContent() {
               </div>
             ))}
 
-            {/* Notes */}
             <div style={{ background:s.surface, border:`1px solid ${s.border}`, borderRadius:14, padding:'16px' }}>
               <div style={{ fontSize:11, color:s.muted, marginBottom:8 }}>Заметки к анализам</div>
               <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Контекст, самочувствие, что менял перед анализами..." rows={3} style={{ width:'100%', background:s.surface2, border:`1px solid ${s.border}`, borderRadius:8, padding:'10px 12px', color:s.text, fontFamily:"'DM Sans',sans-serif", fontSize:13, outline:'none', resize:'none', boxSizing:'border-box' }} />
@@ -431,7 +422,6 @@ function CheckupsContent() {
 
       </div>
 
-      {/* Save button */}
       {tab === 'input' && (
         <div style={{ position:'fixed', bottom:0, left:0, right:0, padding:'14px 20px', background:s.bg, borderTop:`1px solid ${s.border}` }}>
           <div style={{ maxWidth:560, margin:'0 auto' }}>
