@@ -434,27 +434,34 @@ function CheckupsContent() {
         if (data.records && data.records.length > 0) {
           for (const record of data.records) {
             const resolvedLabName = record.lab_name || labName || null
-            if (record.found && Object.keys(record.found).length > 0) {
-              const payload = { user_id: user.id, date: record.date, lab_name: resolvedLabName, notes: notes || null }
-              Object.entries(record.found).forEach(([key, val]) => { if (val !== null) payload[key] = val })
-              console.log(`[handleUpload] upserting health_metrics for date=${record.date} | keys:`, Object.keys(record.found).join(','))
-              const { error } = await supabase.from('health_metrics').upsert(payload, { onConflict: 'user_id,date' })
-              if (error) console.error('[handleUpload] health_metrics error:', error)
+            if (record.biomarkers && record.biomarkers.length > 0) {
+              const rows = record.biomarkers.map(b => ({
+                user_id: user.id,
+                date: record.date,
+                lab_name: resolvedLabName,
+                key: b.key,
+                name: b.name,
+                value: b.value,
+                unit: b.unit || null,
+                ref_min: b.ref_min ?? null,
+                ref_max: b.ref_max ?? null,
+                is_flagged: b.is_flagged ?? false,
+              }))
+              console.log(`[handleUpload] upserting ${rows.length} rows for date=${record.date}`)
+              const { data: upsertData, error } = await supabase
+                .from('health_biomarkers')
+                .upsert(rows, { onConflict: 'user_id,date,key' })
+                .select()
+              console.log(`[handleUpload] health_biomarkers date=${record.date} | error:`, error, '| rows returned:', upsertData?.length ?? 0)
             }
           }
 
-          // Show most recent record in the manual form
+          // Show most recent record date in the form header
           const last = [...data.records].sort((a, b) => b.date.localeCompare(a.date))[0]
-          setValues(prev => {
-            const updated = { ...prev }
-            Object.entries(last.found || {}).forEach(([key, val]) => { if (val !== null) updated[key] = String(val) })
-            return updated
-          })
           if (last.lab_name) setLabName(last.lab_name)
           if (last.date) setDate(last.date)
 
-          const { data: hist } = await supabase.from('health_metrics').select('*').eq('user_id', user.id).order('date', { ascending: false }).limit(50)
-          setHistory(hist || [])
+          await loadBiomarkers(user.id)
 
           const savedDates = data.records.map(r => r.date).join(', ')
           setUploadResult({
