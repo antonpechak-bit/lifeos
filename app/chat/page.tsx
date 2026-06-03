@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase, Message } from '@/lib/supabase'
 import { LAYERS, OPENING_MESSAGE } from '@/lib/prompts'
+import { VoiceButton } from '@/lib/VoiceButton'
 
 function detectLayer(text: string): number | null {
   const t = text.toLowerCase()
@@ -163,35 +164,7 @@ function ChatContent() {
   const [sessionLoaded, setSessionLoaded] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const [listening, setListening] = useState(false)
-  const recognitionRef = useRef<any>(null)
 
-  function startVoice() {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    if (!SpeechRecognition) return
-    const rec = new SpeechRecognition()
-    rec.lang = 'ru-RU'
-    rec.continuous = false
-    rec.interimResults = false
-    rec.onstart = () => setListening(true)
-    rec.onend = () => setListening(false)
-    rec.onresult = (e: any) => {
-      const transcript = e.results[0][0].transcript
-      setInput(prev => prev ? prev + ' ' + transcript : transcript)
-      if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto'
-        textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 160) + 'px'
-      }
-    }
-    rec.onerror = () => setListening(false)
-    recognitionRef.current = rec
-    rec.start()
-  }
-
-  function stopVoice() {
-    recognitionRef.current?.stop()
-    setListening(false)
-  }
 
   useEffect(() => {
     if (sessionId && !sessionLoaded) {
