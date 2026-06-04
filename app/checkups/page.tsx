@@ -11,6 +11,33 @@ const s = {
   green:'#7ab87a', red:'#e07070', info:'#6ea8c8'
 }
 
+const KEY_NAMES: Record<string, string> = {
+  glucose:'Глюкоза', hba1c:'HbA1c', insulin:'Инсулин',
+  alt:'АЛТ', ast:'АСТ', ggt:'ГГТ', alp:'ЩФ', ldh:'ЛДГ',
+  bilirubin:'Билирубин', bilirubin_direct:'Билирубин прямой', bilirubin_indirect:'Билирубин непрямой',
+  total_protein:'Общий белок', albumin:'Альбумин', creatinine:'Креатинин',
+  urea:'Мочевина', uric_acid:'Мочевая кислота',
+  cholesterol:'Холестерин', hdl:'ЛПВП', ldl:'ЛПНП', triglycerides:'Триглицериды', vldl:'ЛПОНП',
+  tsh:'ТТГ', free_t4:'Св. Т4', free_t3:'Св. Т3', t4:'Т4', t3:'Т3',
+  testosterone:'Тестостерон', estradiol:'Эстрадиол', progesterone:'Прогестерон',
+  cortisol:'Кортизол', dhea_s:'ДГЭА-С', lh:'ЛГ', fsh:'ФСГ', prolactin:'Пролактин',
+  igf1:'ИФР-1', shbg:'ГСПГ',
+  hemoglobin:'Гемоглобин', hematocrit:'Гематокрит',
+  rbc:'Эритроциты', wbc:'Лейкоциты', plt:'Тромбоциты',
+  mcv:'MCV', mch:'MCH', mchc:'MCHC', rdw:'RDW',
+  neutrophils:'Нейтрофилы', lymphocytes:'Лимфоциты', monocytes:'Моноциты',
+  eosinophils:'Эозинофилы', basophils:'Базофилы',
+  crp:'СРБ', esr:'СОЭ', fibrinogen:'Фибриноген', il6:'ИЛ-6',
+  ferritin:'Ферритин', iron:'Железо', transferrin:'Трансферрин', tibc:'ОЖСС',
+  vitamin_d:'Витамин D', vitamin_b12:'Витамин B12', folate:'Фолат',
+  magnesium:'Магний', calcium:'Кальций', phosphorus:'Фосфор', potassium:'Калий',
+  sodium:'Натрий', zinc:'Цинк', selenium:'Селен',
+}
+
+function keyToName(key: string): string {
+  return KEY_NAMES[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
 const GROUP_COLORS = {
   metabolism:  '#c8a86e',
   inflammation:'#e07070',
@@ -169,7 +196,7 @@ function DynamicsTab({ biomarkerRows }) {
 
   const byKey = {}
   for (const row of (biomarkerRows || [])) {
-    if (!byKey[row.key]) byKey[row.key] = { key:row.key, name:row.name, unit:row.unit, points:[] }
+    if (!byKey[row.key]) byKey[row.key] = { key:row.key, name:row.name || keyToName(row.key), unit:row.unit, points:[] }
     byKey[row.key].points.push({ date:row.date, value:Number(row.value), ref_min:row.ref_min, ref_max:row.ref_max, is_flagged:row.is_flagged })
   }
 
@@ -352,7 +379,7 @@ function CheckupsContent() {
                 date: record.date,
                 lab_name: resolvedLabName,
                 key: b.key,
-                name: b.name,
+                name: b.name || keyToName(b.key),
                 value: b.value,
                 unit: b.unit || null,
                 ref_min: b.ref_min ?? null,
@@ -510,7 +537,7 @@ function CheckupsContent() {
                           whiteSpace:'nowrap',
                           lineHeight:1.4,
                         }}>
-                          <span style={{ opacity:0.75 }}>{b.name}</span>
+                          <span style={{ opacity:0.75 }}>{b.name || keyToName(b.key)}</span>
                           {' '}
                           <strong style={{ fontWeight:600 }}>{b.value}</strong>
                           {b.unit ? <span style={{ opacity:0.6 }}> {b.unit}</span> : ''}
