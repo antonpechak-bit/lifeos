@@ -90,34 +90,41 @@ export async function POST(req: NextRequest) {
     const dates: string[] = pass1Parsed.dates
     console.log('[parse-labs] Pass 1 found dates:', dates)
 
-    // ── Pass 2: extract biomarkers per date in parallel ────────
-    console.log(`[parse-labs] Pass 2: extracting biomarkers for ${dates.length} dates in parallel`)
+    // ── Pass 2: extract biomarkers per date sequentially ─────────
+    console.log(`[parse-labs] Pass 2: extracting biomarkers for ${dates.length} dates sequentially`)
 
-    const dateResults = await Promise.all(
-      dates.map(async (date) => {
-        const pass2 = await anthropic.messages.create({
-          model: 'claude-sonnet-4-5',
-          max_tokens: 2000,
-          messages: [{ role: 'user', content: [fileBlock, { type: 'text', text: pass2Prompt(date) }] }],
-        })
+    const dateResults = []
+    for (let i = 0; i < dates.length; i++) {
+      const date = dates[i]
+      console.log(`[parse-labs] Processing date ${i + 1} of ${dates.length}: ${date}`)
 
-        console.log(`[parse-labs] Pass 2 date=${date} stop_reason:`, pass2.stop_reason)
-        const raw = pass2.content[0]?.type === 'text' ? pass2.content[0].text : ''
-        const parsed = parseJson(raw, `pass2-${date}`)
+      const pass2 = await anthropic.messages.create({
+        model: 'claude-sonnet-4-5',
+        max_tokens: 2000,
+        messages: [{ role: 'user', content: [fileBlock, { type: 'text', text: pass2Prompt(date) }] }],
+      })
 
-        if (!parsed) return null
+      console.log(`[parse-labs] Pass 2 date=${date} stop_reason:`, pass2.stop_reason)
+      const raw = pass2.content[0]?.type === 'text' ? pass2.content[0].text : ''
+      const parsed = parseJson(raw, `pass2-${date}`)
 
+      if (!parsed) {
+        dateResults.push(null)
+      } else {
         const biomarkers = (parsed.biomarkers || []).filter(b => b.value !== null && b.value !== undefined)
         console.log(`[parse-labs] Pass 2 date=${date} | biomarkers=${biomarkers.length}`)
-
-        return {
+        dateResults.push({
           date,
           lab_name: parsed.lab_name || null,
           biomarkers,
           count: biomarkers.length,
-        }
-      })
-    )
+        })
+      }
+
+      if (i < dates.length - 1) {
+        await new Promise(r => setTimeout(r, 500))
+      }
+    }
 
     const records = dateResults.filter(r => r !== null && r.count > 0)
     const totalCount = records.reduce((s, r) => s + r.count, 0)
