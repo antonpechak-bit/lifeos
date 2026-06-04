@@ -4,40 +4,55 @@ import Anthropic from '@anthropic-ai/sdk'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
-const PROMPT_TEXT = `Это медицинские анализы. Документ может содержать НЕСКОЛЬКО дат.
+const PASS1_PROMPT = `Это медицинские анализы. Найди все даты, для которых есть результаты анализов.
 
-Извлеки ВСЕ числовые показатели для каждой даты. Пропускай качественные результаты (Отрицательно, Не обнаружено и т.п.).
+Верни ТОЛЬКО JSON без пояснений:
+{"dates": ["YYYY-MM-DD", "YYYY-MM-DD", ...]}
+
+Если дата не указана явно — определи из контекста. Только JSON.`
+
+function pass2Prompt(date: string) {
+  return `Это медицинские анализы. Извлеки ВСЕ числовые показатели ТОЛЬКО для даты ${date}.
+Пропускай качественные результаты (Отрицательно, Не обнаружено и т.п.).
 
 Верни ТОЛЬКО JSON:
-
 {
-  "records": [
+  "lab_name": "название или null",
+  "biomarkers": [
     {
-      "date": "YYYY-MM-DD",
-      "lab_name": "название или null",
-      "biomarkers": [
-        {
-          "key": "snake_case_latin",
-          "name": "Название на русском",
-          "value": число,
-          "unit": "единица",
-          "ref_min": число или null,
-          "ref_max": число или null,
-          "is_flagged": true/false
-        }
-      ]
+      "key": "snake_case_latin",
+      "name": "Название на русском",
+      "value": число,
+      "unit": "единица",
+      "ref_min": число или null,
+      "ref_max": число или null,
+      "is_flagged": true/false
     }
-  ],
-  "summary": "1-2 предложения"
+  ]
 }
 
 Правила:
-- key: латиница snake_case (glucose, hba1c, alt, ast, tsh, free_t4, creatinine, uric_acid и т.д.)
-- Отдельная запись для каждой даты; если дата не указана — используй сегодняшнюю
+- key: латиница snake_case (glucose, hba1c, alt, ast, tsh, free_t4, creatinine и т.д.)
 - is_flagged = true если есть *, H, L, стрелка, или значение вне ref_min/ref_max
-- ref_min/ref_max — из референсного диапазона лаборатории
 - Приводи к СИ: глюкоза/холестерин в ммоль/л (мг/дл ÷ 18.0 и ÷ 38.67), тестостерон в нмоль/л (нг/дл ÷ 28.85)
 - Только JSON, никакого другого текста`
+}
+
+function buildFileBlock(mediaType: string, data: string) {
+  return mediaType === 'application/pdf'
+    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data } }
+    : { type: 'image', source: { type: 'base64', media_type: mediaType, data } }
+}
+
+function parseJson(raw: string, label: string) {
+  const clean = raw.replace(/```json|```/g, '').trim()
+  try {
+    return JSON.parse(clean)
+  } catch (e) {
+    console.error(`[parse-labs] JSON.parse failed for ${label}:`, e.message, '| first 300 chars:', clean.slice(0, 300))
+    return null
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -50,62 +65,70 @@ export async function POST(req: NextRequest) {
     }
 
     const isPdf = mediaType === 'application/pdf'
-
     console.log('[parse-labs] mediaType:', mediaType, '| isPdf:', isPdf, '| data length:', data?.length)
 
-    const fileBlock = isPdf
-      ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data } }
-      : { type: 'image', source: { type: 'base64', media_type: mediaType, data } }
+    const fileBlock = buildFileBlock(mediaType, data)
 
-    const response = await anthropic.messages.create({
+    // ── Pass 1: extract dates ──────────────────────────────────
+    console.log('[parse-labs] Pass 1: extracting dates')
+    const pass1 = await anthropic.messages.create({
       model: 'claude-sonnet-4-5',
-      max_tokens: 8000,
-      messages: [{
-        role: 'user',
-        content: [fileBlock, { type: 'text', text: PROMPT_TEXT }],
-      }],
+      max_tokens: 500,
+      messages: [{ role: 'user', content: [fileBlock, { type: 'text', text: PASS1_PROMPT }] }],
     })
 
-    console.log('[parse-labs] stop_reason:', response.stop_reason, '| content blocks:', response.content.length)
-    const raw = response.content[0]?.type === 'text' ? response.content[0].text : ''
-    console.log('[parse-labs] raw response (first 1000 chars):', raw.slice(0, 1000))
+    console.log('[parse-labs] Pass 1 stop_reason:', pass1.stop_reason)
+    const pass1Raw = pass1.content[0]?.type === 'text' ? pass1.content[0].text : ''
+    console.log('[parse-labs] Pass 1 raw:', pass1Raw)
 
-    if (!raw) {
-      console.error('[parse-labs] Empty response from Claude')
-      return NextResponse.json({ error: 'Empty response from Claude', records: [] }, { status: 500 })
+    const pass1Parsed = parseJson(pass1Raw, 'pass1')
+    if (!pass1Parsed || !Array.isArray(pass1Parsed.dates) || pass1Parsed.dates.length === 0) {
+      console.error('[parse-labs] Pass 1 returned no dates')
+      return NextResponse.json({ error: 'No dates found in document', records: [] }, { status: 200 })
     }
 
-    const clean = raw.replace(/```json|```/g, '').trim()
+    const dates: string[] = pass1Parsed.dates
+    console.log('[parse-labs] Pass 1 found dates:', dates)
 
-    let parsed
-    try {
-      parsed = JSON.parse(clean)
-      console.log('[parse-labs] JSON.parse succeeded | records:', parsed.records?.length ?? 0,
-        '| first record biomarkers:', parsed.records?.[0]?.biomarkers?.length ?? 'n/a')
-    } catch (parseErr) {
-      console.error('[parse-labs] JSON.parse failed:', parseErr.message)
-      console.error('[parse-labs] Failing JSON (first 500 chars):', clean.slice(0, 500))
-      return NextResponse.json({ error: 'Failed to parse response', raw }, { status: 500 })
-    }
+    // ── Pass 2: extract biomarkers per date in parallel ────────
+    console.log(`[parse-labs] Pass 2: extracting biomarkers for ${dates.length} dates in parallel`)
 
-    const records = (parsed.records || []).map(record => {
-      const biomarkers = (record.biomarkers || []).filter(b => b.value !== null && b.value !== undefined)
-      console.log(`[parse-labs] record date=${record.date} | biomarkers=${biomarkers.length}`)
-      return {
-        date: record.date,
-        lab_name: record.lab_name,
-        biomarkers,
-        count: biomarkers.length,
-      }
-    }).filter(r => r.count > 0)
+    const dateResults = await Promise.all(
+      dates.map(async (date) => {
+        const pass2 = await anthropic.messages.create({
+          model: 'claude-sonnet-4-5',
+          max_tokens: 2000,
+          messages: [{ role: 'user', content: [fileBlock, { type: 'text', text: pass2Prompt(date) }] }],
+        })
 
-    console.log('[parse-labs] final records:', records.length, '| total biomarkers:', records.reduce((s, r) => s + r.count, 0))
+        console.log(`[parse-labs] Pass 2 date=${date} stop_reason:`, pass2.stop_reason)
+        const raw = pass2.content[0]?.type === 'text' ? pass2.content[0].text : ''
+        const parsed = parseJson(raw, `pass2-${date}`)
+
+        if (!parsed) return null
+
+        const biomarkers = (parsed.biomarkers || []).filter(b => b.value !== null && b.value !== undefined)
+        console.log(`[parse-labs] Pass 2 date=${date} | biomarkers=${biomarkers.length}`)
+
+        return {
+          date,
+          lab_name: parsed.lab_name || null,
+          biomarkers,
+          count: biomarkers.length,
+        }
+      })
+    )
+
+    const records = dateResults.filter(r => r !== null && r.count > 0)
+    const totalCount = records.reduce((s, r) => s + r.count, 0)
+
+    console.log('[parse-labs] Final records:', records.length, '| total biomarkers:', totalCount)
 
     return NextResponse.json({
       records,
-      total_count: records.reduce((s, r) => s + r.count, 0),
+      total_count: totalCount,
       dates_found: records.length,
-      summary: parsed.summary,
+      summary: null,
     })
 
   } catch (error) {
