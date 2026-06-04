@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "app/api/parse-labs/route.ts": {
+      "maxDuration": 300
+    }
+  }
+}
