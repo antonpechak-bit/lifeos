@@ -16,6 +16,9 @@ const ALLOWED_FIELDS = [
   'resting_heart_rate',
   'active_calories',
   'weight',
+  'workout_minutes',
+  'workout_type',
+  'workout_calories',
 ]
 
 function authenticate(req: NextRequest): boolean {

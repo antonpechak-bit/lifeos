@@ -6,13 +6,16 @@ Run this in the **Supabase SQL Editor** before using the API (adds health column
 
 ```sql
 alter table daily_logs
-  add column if not exists sleep_hours       numeric,
-  add column if not exists sleep_start       text,
-  add column if not exists sleep_end         text,
-  add column if not exists hrv               numeric,
+  add column if not exists sleep_hours        numeric,
+  add column if not exists sleep_start        text,
+  add column if not exists sleep_end          text,
+  add column if not exists hrv                numeric,
   add column if not exists resting_heart_rate numeric,
-  add column if not exists active_calories   numeric,
-  add column if not exists weight            numeric;
+  add column if not exists active_calories    numeric,
+  add column if not exists weight             numeric,
+  add column if not exists workout_minutes    numeric,
+  add column if not exists workout_type       text,
+  add column if not exists workout_calories   numeric;
 ```
 
 ---
@@ -54,6 +57,9 @@ Upserts health data for a given user and date.
 | `resting_heart_rate` | number | `58` |
 | `active_calories` | number | `420` |
 | `weight` | number | `78.4` |
+| `workout_minutes` | number | `45` |
+| `workout_type` | string | `"Running"` |
+| `workout_calories` | number | `380` |
 
 **Example request:**
 ```json
