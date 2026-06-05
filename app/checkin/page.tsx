@@ -1,6 +1,6 @@
 // @ts-nocheck
 'use client'
-import { useEffect, useState, useRef, Suspense } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { VoiceButton } from '@/lib/VoiceButton'
@@ -31,19 +31,36 @@ function InfoModal({ dim, onClose }) {
   )
 }
 
+const s = {
+  bg:'#0d0d0f', surface:'#141416', surface2:'#1a1a1e',
+  border:'rgba(255,255,255,0.07)', text:'#e8e6e0', dim:'#7a7870', muted:'#3d3d3d', accent:'#c8b89a',
+}
+
+const DAY_LABELS = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс']
+const MONTH_SHORT = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек']
+
+function formatDateLabel(dateStr, today) {
+  if (dateStr === today) return 'Сегодня'
+  const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1)
+  if (dateStr === yesterday.toISOString().split('T')[0]) return 'Вчера'
+  const d = new Date(dateStr + 'T00:00:00')
+  const dayIdx = d.getDay() === 0 ? 6 : d.getDay() - 1
+  return `${DAY_LABELS[dayIdx]} ${d.getDate()} ${MONTH_SHORT[d.getMonth()]}`
+}
+
 function CheckinContent() {
   const router = useRouter()
   const [step, setStep] = useState('loading') // loading | sprint | physio | done
 
   const [user, setUser] = useState(null)
-  const [sprint, setSprint] = useState(null)
+  const [sprints, setSprints] = useState([])
   const [infoModal, setInfoModal] = useState(null)
   const [saving, setSaving] = useState(false)
 
-  // Sprint checkin
-  const [sprintDone, setSprintDone] = useState(null)
-  const [barrier, setBarrier] = useState('')
-  const [weekDays, setWeekDays] = useState([])
+  // Per-sprint state keyed by sprint.id
+  const [sprintDones, setSprintDones] = useState({})   // { [id]: 'yes'|'partial'|'no' }
+  const [barriers, setBarriers] = useState({})          // { [id]: string }
+  const [weekDaysMap, setWeekDaysMap] = useState({})    // { [id]: weekDay[] }
 
   // Wellbeing
   const [wellbeing, setWellbeing] = useState({ energy: null, mood: null, meaning: null, connection: null })
@@ -57,10 +74,16 @@ function CheckinContent() {
   const [regulation, setRegulation] = useState(null)
 
   const today = new Date().toISOString().split('T')[0]
-  const dayLabels = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс']
+  const [selectedDate, setSelectedDate] = useState(today)
+
+  // 30-day date list, newest first
+  const dateList = Array.from({ length: 30 }, (_, i) => {
+    const d = new Date(); d.setDate(d.getDate() - i)
+    return d.toISOString().split('T')[0]
+  })
 
   useEffect(() => {
-    async function load() {
+    async function init() {
       try {
         const { data: authData } = await supabase.auth.getSession()
         if (!authData?.session) { router.push('/'); return }
@@ -69,61 +92,96 @@ function CheckinContent() {
 
         const { data: sprintData } = await supabase
           .from('sprints').select('*').eq('user_id', u.id).eq('status', 'active')
-          .order('created_at', { ascending: false }).limit(1)
+          .order('created_at', { ascending: false })
 
-        const spr = sprintData?.[0] || null
-        setSprint(spr)
-
-        if (spr) {
-          const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 6)
-          const { data: checks } = await supabase.from('checkins').select('*')
-            .eq('sprint_id', spr.id).gte('date', weekAgo.toISOString().split('T')[0])
-
-          const days = []
-          for (let i = 6; i >= 0; i--) {
-            const d = new Date(); d.setDate(d.getDate() - i)
-            const dateStr = d.toISOString().split('T')[0]
-            const check = checks?.find(c => c.date === dateStr)
-            const dayIdx = d.getDay() === 0 ? 6 : d.getDay() - 1
-            days.push({ dateStr, isToday: dateStr === today, done: check?.completed, missed: check && !check.completed, label: dayLabels[dayIdx] })
-          }
-          setWeekDays(days)
-
-          const todayCheck = checks?.find(c => c.date === today)
-          if (todayCheck) setSprintDone(todayCheck.completed ? 'yes' : todayCheck.note ? 'partial' : 'no')
-          if (todayCheck?.note) setBarrier(todayCheck.note)
-        }
-
-        // Load today's daily log if exists
-        const { data: logData } = await supabase
-          .from('daily_logs').select('*').eq('user_id', u.id).eq('date', today)
-          .maybeSingle()
-
-        if (logData) {
-          setWellbeing({ energy: logData.energy, mood: logData.mood, meaning: logData.meaning, connection: logData.connection })
-          setSleepQuality(logData.sleep_quality)
-          setWakeTime(logData.wake_time || '')
-          setWorkout(logData.workout)
-          setSteps(logData.steps?.toString() || '')
-          setAnxietyLevel(logData.anxiety_level)
-          setRegulation(logData.regulation_practice)
-        }
-
+        const allSprints = sprintData || []
+        setSprints(allSprints)
+        await loadData(u, today, allSprints)
         setStep('sprint')
       } catch(e) {
         console.error('Load error:', e)
         setStep('sprint')
       }
     }
-    load()
+    init()
   }, [])
 
+  async function loadData(u, date, sprintList) {
+    // Reset all form state
+    setSprintDones({})
+    setBarriers({})
+    setWellbeing({ energy: null, mood: null, meaning: null, connection: null })
+    setSleepQuality(null)
+    setWakeTime('')
+    setWorkout(null)
+    setSteps('')
+    setAnxietyLevel(null)
+    setRegulation(null)
+
+    const weekAgo = new Date(date + 'T00:00:00'); weekAgo.setDate(weekAgo.getDate() - 6)
+    const weekAgoStr = weekAgo.toISOString().split('T')[0]
+
+    const newWeekDaysMap = {}
+    const newSprintDones = {}
+    const newBarriers = {}
+
+    for (const spr of sprintList) {
+      const { data: checks } = await supabase.from('checkins').select('*')
+        .eq('sprint_id', spr.id).gte('date', weekAgoStr).lte('date', date)
+
+      const days = []
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(date + 'T00:00:00'); d.setDate(d.getDate() - i)
+        const dateStr = d.toISOString().split('T')[0]
+        const check = checks?.find(c => c.date === dateStr)
+        const dayIdx = d.getDay() === 0 ? 6 : d.getDay() - 1
+        days.push({ dateStr, isSelected: dateStr === date, done: check?.completed, missed: check && !check.completed, label: DAY_LABELS[dayIdx] })
+      }
+      newWeekDaysMap[spr.id] = days
+
+      const dateCheck = checks?.find(c => c.date === date)
+      if (dateCheck) {
+        newSprintDones[spr.id] = dateCheck.completed ? 'yes' : dateCheck.note ? 'partial' : 'no'
+        if (dateCheck.note) newBarriers[spr.id] = dateCheck.note
+      }
+    }
+
+    setWeekDaysMap(newWeekDaysMap)
+    setSprintDones(newSprintDones)
+    setBarriers(newBarriers)
+
+    const { data: logData } = await supabase
+      .from('daily_logs').select('*').eq('user_id', u.id).eq('date', date).maybeSingle()
+
+    if (logData) {
+      setWellbeing({ energy: logData.energy, mood: logData.mood, meaning: logData.meaning, connection: logData.connection })
+      setSleepQuality(logData.sleep_quality)
+      setWakeTime(logData.wake_time || '')
+      setWorkout(logData.workout)
+      setSteps(logData.steps?.toString() || '')
+      setAnxietyLevel(logData.anxiety_level)
+      setRegulation(logData.regulation_practice)
+    }
+  }
+
+  async function handleDateChange(newDate) {
+    if (!user) return
+    setSelectedDate(newDate)
+    setStep('sprint')
+    await loadData(user, newDate, sprints)
+  }
+
   async function saveSprint() {
-    if (!sprintDone || !sprint || !user) { setStep('physio'); return }
-    await supabase.from('checkins').upsert({
-      sprint_id: sprint.id, user_id: user.id, date: today,
-      completed: sprintDone === 'yes', note: barrier || null,
-    }, { onConflict: 'sprint_id,date' })
+    if (!user) { setStep('physio'); return }
+    for (const spr of sprints) {
+      const done = sprintDones[spr.id]
+      if (done) {
+        await supabase.from('checkins').upsert({
+          sprint_id: spr.id, user_id: user.id, date: selectedDate,
+          completed: done === 'yes', note: barriers[spr.id] || null,
+        }, { onConflict: 'sprint_id,date' })
+      }
+    }
     setStep('physio')
   }
 
@@ -134,7 +192,7 @@ function CheckinContent() {
     const wellbeingIndex = filled.length > 0 ? filled.reduce((a,b) => a+b, 0) / filled.length : null
 
     await supabase.from('daily_logs').upsert({
-      user_id: user.id, date: today,
+      user_id: user.id, date: selectedDate,
       wake_time: wakeTime || null, sleep_quality: sleepQuality,
       steps: steps ? parseInt(steps) : null, workout,
       anxiety_level: anxietyLevel, regulation_practice: regulation,
@@ -147,8 +205,6 @@ function CheckinContent() {
     setStep('done')
     setTimeout(() => router.push('/dashboard'), 1500)
   }
-
-  const s = { bg:'#0d0d0f', surface:'#141416', surface2:'#1a1a1e', border:'rgba(255,255,255,0.07)', text:'#e8e6e0', dim:'#7a7870', muted:'#3d3d3d', accent:'#c8b89a' }
 
   if (step === 'loading') return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:s.bg }}>
@@ -165,9 +221,16 @@ function CheckinContent() {
     </div>
   )
 
+  const selectedDateObj = new Date(selectedDate + 'T00:00:00')
+  const dateDisplayLabel = selectedDateObj.toLocaleDateString('ru', { day:'numeric', month:'long' })
+
   return (
     <div style={{ minHeight:'100vh', background:s.bg, color:s.text, fontFamily:"'DM Sans',sans-serif", fontWeight:300 }}>
-      <style>{`@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      <style>{`
+        @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+        .date-scroll::-webkit-scrollbar{display:none}
+        .date-scroll{-ms-overflow-style:none;scrollbar-width:none}
+      `}</style>
 
       {infoModal && <InfoModal dim={infoModal} onClose={() => setInfoModal(null)} />}
 
@@ -175,67 +238,120 @@ function CheckinContent() {
       <header style={{ padding:'14px 20px', borderBottom:`1px solid ${s.border}`, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
         <button onClick={() => router.push('/dashboard')} style={{ fontSize:13, color:s.dim, background:'none', border:'none', cursor:'pointer' }}>← Назад</button>
         <span style={{ fontFamily:"'Playfair Display',serif", fontSize:16, color:s.accent }}>
-          {step === 'sprint' ? '⚡ Спринт' : '📊 Состояние'} · {new Date().toLocaleDateString('ru', { day:'numeric', month:'long' })}
+          {step === 'sprint' ? '⚡ Спринт' : '📊 Состояние'} · {dateDisplayLabel}
         </span>
         <div style={{ width:50 }} />
       </header>
+
+      {/* Date selector */}
+      <div className="date-scroll" style={{ overflowX:'auto', display:'flex', gap:8, padding:'12px 16px', borderBottom:`1px solid ${s.border}` }}>
+        {dateList.map(d => {
+          const isSelected = d === selectedDate
+          return (
+            <button
+              key={d}
+              onClick={() => handleDateChange(d)}
+              style={{
+                flexShrink:0, padding:'6px 14px', borderRadius:20,
+                background: isSelected ? s.accent : s.surface,
+                border:`1px solid ${isSelected ? s.accent : s.border}`,
+                color: isSelected ? '#0d0d0f' : s.dim,
+                fontSize:12, fontWeight: isSelected ? 500 : 300,
+                cursor:'pointer', transition:'all 0.15s', whiteSpace:'nowrap',
+              }}
+            >
+              {formatDateLabel(d, today)}
+            </button>
+          )
+        })}
+      </div>
 
       <div style={{ maxWidth:480, margin:'0 auto', padding:'20px 16px 100px' }}>
 
         {/* ── ЭКРАН 1: СПРИНТ ── */}
         {step === 'sprint' && (
           <div style={{ animation:'fadeUp 0.3s forwards' }}>
-            {sprint ? (
-              <>
-                {/* Sprint info */}
-                <div style={{ background:s.surface, border:`1px solid ${s.border}`, borderRadius:16, padding:'18px 20px', marginBottom:20 }}>
-                  <div style={{ fontSize:11, color:s.muted, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:8 }}>
-                    День {Math.ceil((new Date() - new Date(sprint.started_at)) / 86400000) + 1} из {sprint.target_days}
-                  </div>
-                  <div style={{ fontSize:17, fontWeight:500, marginBottom:6 }}>{sprint.behavior_name}</div>
-                  <div style={{ fontSize:12, color:s.dim, marginBottom:8 }}>{sprint.behavior_description}</div>
-                  <div style={{ fontSize:11, color:s.muted }}>⚓ {sprint.anchor}</div>
-                </div>
+            {sprints.length > 0 ? (
+              <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
+                {sprints.map(sprint => {
+                  const weekDays = weekDaysMap[sprint.id] || []
+                  const sprintDone = sprintDones[sprint.id] ?? null
+                  const barrier = barriers[sprint.id] ?? ''
 
-                {/* Week track */}
-                <div style={{ marginBottom:24 }}>
-                  <div style={{ fontSize:11, color:s.muted, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:10 }}>Эта неделя</div>
-                  <div style={{ display:'flex', gap:6 }}>
-                    {weekDays.map((d, i) => (
-                      <div key={i} style={{ flex:1, textAlign:'center' }}>
-                        <div style={{ width:'100%', aspectRatio:'1', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, background: d.done ? 'rgba(122,184,122,0.2)' : d.missed ? 'rgba(224,112,112,0.15)' : d.isToday ? s.surface2 : s.surface, border:`1px solid ${d.done ? 'rgba(122,184,122,0.4)' : d.missed ? 'rgba(224,112,112,0.3)' : d.isToday ? 'rgba(200,184,154,0.3)' : 'rgba(255,255,255,0.05)'}` }}>
-                          {d.done ? '✓' : d.missed ? '×' : d.isToday ? '·' : ''}
+                  return (
+                    <div key={sprint.id}>
+                      {/* Sprint info */}
+                      <div style={{ background:s.surface, border:`1px solid ${s.border}`, borderRadius:16, padding:'18px 20px', marginBottom:14 }}>
+                        <div style={{ fontSize:11, color:s.muted, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:8 }}>
+                          День {Math.ceil((new Date() - new Date(sprint.started_at)) / 86400000) + 1} из {sprint.target_days}
                         </div>
-                        <div style={{ fontSize:10, color:s.muted, marginTop:4 }}>{d.label}</div>
+                        <div style={{ fontSize:17, fontWeight:500, marginBottom:6 }}>{sprint.behavior_name}</div>
+                        <div style={{ fontSize:12, color:s.dim, marginBottom:8 }}>{sprint.behavior_description}</div>
+                        <div style={{ fontSize:11, color:s.muted }}>⚓ {sprint.anchor}</div>
                       </div>
-                    ))}
-                  </div>
-                </div>
 
-                {/* Main question */}
-                <div style={{ marginBottom:20 }}>
-                  <div style={{ fontSize:15, marginBottom:14, lineHeight:1.5 }}>
-                    Выполнил <strong>{sprint.behavior_name}</strong> сегодня?
-                  </div>
-                  <div style={{ display:'flex', gap:8 }}>
-                    {[['yes','✓ Да','#7ab87a'],['partial','≈ Частично','#c8a86e'],['no','× Нет','#e07070']].map(([val,label,color]) => (
-                      <button key={val} onClick={() => setSprintDone(val)} style={{ flex:1, padding:'12px 8px', borderRadius:12, border:`1px solid ${sprintDone===val ? color : s.border}`, background:sprintDone===val ? `${color}20` : s.surface, color:sprintDone===val ? color : s.dim, fontSize:13, fontWeight:sprintDone===val ? 500 : 300, cursor:'pointer', transition:'all 0.15s' }}>
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                      {/* Week track */}
+                      <div style={{ marginBottom:14 }}>
+                        <div style={{ fontSize:11, color:s.muted, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:10 }}>Эта неделя</div>
+                        <div style={{ display:'flex', gap:6 }}>
+                          {weekDays.map((d, i) => (
+                            <div key={i} style={{ flex:1, textAlign:'center' }}>
+                              <div style={{
+                                width:'100%', aspectRatio:'1', borderRadius:8,
+                                display:'flex', alignItems:'center', justifyContent:'center', fontSize:14,
+                                background: d.done ? 'rgba(122,184,122,0.2)' : d.missed ? 'rgba(224,112,112,0.15)' : d.isSelected ? s.surface2 : s.surface,
+                                border:`1px solid ${d.done ? 'rgba(122,184,122,0.4)' : d.missed ? 'rgba(224,112,112,0.3)' : d.isSelected ? 'rgba(200,184,154,0.3)' : 'rgba(255,255,255,0.05)'}`,
+                              }}>
+                                {d.done ? '✓' : d.missed ? '×' : d.isSelected ? '·' : ''}
+                              </div>
+                              <div style={{ fontSize:10, color:s.muted, marginTop:4 }}>{d.label}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
 
-                {(sprintDone === 'no' || sprintDone === 'partial') && (
-                  <div style={{ marginBottom:20, animation:'fadeUp 0.2s forwards' }}>
-                    <div style={{ fontSize:13, color:s.dim, marginBottom:8 }}>Что помешало?</div>
-                    <div style={{ display:'flex', gap:8 }}>
-                    <input value={barrier} onChange={e => setBarrier(e.target.value)} placeholder="Коротко..." style={{ flex:1, background:s.surface, border:`1px solid rgba(255,255,255,0.1)`, borderRadius:10, padding:'10px 12px', color:s.text, fontFamily:"'DM Sans',sans-serif", fontSize:13, outline:'none' }} />
-                    <VoiceButton size={40} onResult={(text) => setBarrier(text)} />
-                  </div>
-                  </div>
-                )}
-              </>
+                      {/* Main question */}
+                      <div style={{ marginBottom: (sprintDone === 'no' || sprintDone === 'partial') ? 12 : 0 }}>
+                        <div style={{ fontSize:15, marginBottom:12, lineHeight:1.5 }}>
+                          Выполнил <strong>{sprint.behavior_name}</strong>?
+                        </div>
+                        <div style={{ display:'flex', gap:8 }}>
+                          {[['yes','✓ Да','#7ab87a'],['partial','≈ Частично','#c8a86e'],['no','× Нет','#e07070']].map(([val,label,color]) => (
+                            <button key={val}
+                              onClick={() => setSprintDones(prev => ({ ...prev, [sprint.id]: val }))}
+                              style={{
+                                flex:1, padding:'12px 8px', borderRadius:12,
+                                border:`1px solid ${sprintDone===val ? color : s.border}`,
+                                background:sprintDone===val ? `${color}20` : s.surface,
+                                color:sprintDone===val ? color : s.dim,
+                                fontSize:13, fontWeight:sprintDone===val ? 500 : 300,
+                                cursor:'pointer', transition:'all 0.15s',
+                              }}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {(sprintDone === 'no' || sprintDone === 'partial') && (
+                        <div style={{ marginTop:12, animation:'fadeUp 0.2s forwards' }}>
+                          <div style={{ fontSize:13, color:s.dim, marginBottom:8 }}>Что помешало?</div>
+                          <div style={{ display:'flex', gap:8 }}>
+                            <input
+                              value={barrier}
+                              onChange={e => setBarriers(prev => ({ ...prev, [sprint.id]: e.target.value }))}
+                              placeholder="Коротко..."
+                              style={{ flex:1, background:s.surface, border:`1px solid rgba(255,255,255,0.1)`, borderRadius:10, padding:'10px 12px', color:s.text, fontFamily:"'DM Sans',sans-serif", fontSize:13, outline:'none' }}
+                            />
+                            <VoiceButton size={40} onResult={text => setBarriers(prev => ({ ...prev, [sprint.id]: text }))} />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
             ) : (
               <div style={{ textAlign:'center', padding:'40px 20px', border:`1px dashed ${s.border}`, borderRadius:16 }}>
                 <div style={{ fontSize:14, color:s.dim, marginBottom:16 }}>Нет активных спринтов</div>
@@ -264,7 +380,8 @@ function CheckinContent() {
                   </div>
                   <div style={{ display:'flex', gap:4 }}>
                     {[1,2,3,4,5,6,7,8,9,10].map(v => (
-                      <button key={v} onClick={() => setWellbeing(w => ({ ...w, [dim.key]: v }))} style={{ flex:1, height:34, borderRadius:7, background:wellbeing[dim.key]===v ? dim.color : s.surface2, border:`1px solid ${wellbeing[dim.key]===v ? dim.color : s.border}`, color:wellbeing[dim.key]===v ? '#0d0d0f' : s.dim, fontSize:12, fontWeight:wellbeing[dim.key]===v ? 600 : 400, cursor:'pointer', transition:'all 0.15s', transform:wellbeing[dim.key]===v ? 'scale(1.1)' : 'scale(1)' }}>
+                      <button key={v} onClick={() => setWellbeing(w => ({ ...w, [dim.key]: v }))}
+                        style={{ flex:1, height:34, borderRadius:7, background:wellbeing[dim.key]===v ? dim.color : s.surface2, border:`1px solid ${wellbeing[dim.key]===v ? dim.color : s.border}`, color:wellbeing[dim.key]===v ? '#0d0d0f' : s.dim, fontSize:12, fontWeight:wellbeing[dim.key]===v ? 600 : 400, cursor:'pointer', transition:'all 0.15s', transform:wellbeing[dim.key]===v ? 'scale(1.1)' : 'scale(1)' }}>
                         {v}
                       </button>
                     ))}
@@ -349,7 +466,7 @@ function CheckinContent() {
         <div style={{ maxWidth:480, margin:'0 auto' }}>
           {step === 'sprint' && (
             <button onClick={saveSprint} style={{ width:'100%', padding:'13px', borderRadius:14, background:s.accent, color:'#0d0d0f', border:'none', fontSize:14, fontWeight:500, cursor:'pointer', fontFamily:"'DM Sans',sans-serif" }}>
-              {sprint ? 'Далее →' : 'Перейти к состоянию →'}
+              {sprints.length > 0 ? 'Далее →' : 'Перейти к состоянию →'}
             </button>
           )}
           {step === 'physio' && (
