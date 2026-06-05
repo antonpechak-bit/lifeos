@@ -63,45 +63,54 @@ function InfoModal({ dim, onClose }) {
 }
 
 // ── SprintCard: isolated component so each sprint's handlers are independent ──
-function SprintCard({ sprint, weekDays, done, barrier, onDoneChange, onBarrierChange }) {
+function SprintCard({ sprint, weekDays, done, barrier, onDoneChange, onBarrierChange, selectedDate, today }) {
+  const isPastDate = selectedDate !== today
+  const [selY, selM, selD] = selectedDate.split('-').map(Number)
+  const checkinDateLabel = isPastDate
+    ? new Date(selY, selM - 1, selD).toLocaleDateString('ru', { day: 'numeric', month: 'long' })
+    : 'сегодня'
+
+  // Day count always based on today, never on selectedDate
+  const dayNumber = Math.ceil((new Date() - new Date(sprint.started_at)) / 86400000) + 1
+
   return (
     <div>
-      {/* Sprint info */}
+      {/* Sprint info — always reflects current sprint state, independent of selectedDate */}
       <div style={{ background: s.surface, border: `1px solid ${s.border}`, borderRadius: 16, padding: '18px 20px', marginBottom: 14 }}>
         <div style={{ fontSize: 11, color: s.muted, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>
-          День {Math.ceil((new Date() - new Date(sprint.started_at)) / 86400000) + 1} из {sprint.target_days}
+          День {dayNumber} из {sprint.target_days}
         </div>
         <div style={{ fontSize: 17, fontWeight: 500, marginBottom: 6 }}>{sprint.behavior_name}</div>
         <div style={{ fontSize: 12, color: s.dim, marginBottom: 8 }}>{sprint.behavior_description}</div>
         <div style={{ fontSize: 11, color: s.muted }}>⚓ {sprint.anchor}</div>
-      </div>
 
-      {/* Week track */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 11, color: s.muted, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 10 }}>Эта неделя</div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          {weekDays.map((d, i) => (
-            <div key={i} style={{ flex: 1, textAlign: 'center' }}>
-              <div style={{
-                width: '100%', aspectRatio: '1', borderRadius: 8,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14,
-                background: d.done ? 'rgba(122,184,122,0.2)' : d.missed ? 'rgba(224,112,112,0.15)' : d.isSelected ? s.surface2 : s.surface,
-                border: `1px solid ${d.done ? 'rgba(122,184,122,0.4)' : d.missed ? 'rgba(224,112,112,0.3)' : d.isSelected ? 'rgba(200,184,154,0.3)' : 'rgba(255,255,255,0.05)'}`,
-              }}>
-                {d.done ? '✓' : d.missed ? '×' : d.isSelected ? '·' : ''}
+        {/* Week strip lives inside the info card so it reads as sprint history, not checkin state */}
+        <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${s.border}` }}>
+          <div style={{ fontSize: 10, color: s.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>История</div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {weekDays.map((d, i) => (
+              <div key={i} style={{ flex: 1, textAlign: 'center' }}>
+                <div style={{
+                  width: '100%', aspectRatio: '1', borderRadius: 7,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13,
+                  background: d.done ? 'rgba(122,184,122,0.2)' : d.missed ? 'rgba(224,112,112,0.15)' : d.isSelected ? s.surface2 : 'rgba(255,255,255,0.03)',
+                  border: `1px solid ${d.done ? 'rgba(122,184,122,0.35)' : d.missed ? 'rgba(224,112,112,0.25)' : d.isSelected ? 'rgba(200,184,154,0.25)' : 'rgba(255,255,255,0.04)'}`,
+                }}>
+                  {d.done ? '✓' : d.missed ? '×' : d.isSelected ? '·' : ''}
+                </div>
+                <div style={{ fontSize: 9, color: s.muted, marginTop: 3 }}>{d.label}</div>
               </div>
-              <div style={{ fontSize: 10, color: s.muted, marginTop: 4 }}>{d.label}</div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Done question */}
-      <div style={{ marginBottom: (done === 'no' || done === 'partial') ? 12 : 0 }}>
-        <div style={{ fontSize: 15, marginBottom: 12, lineHeight: 1.5 }}>
-          Выполнил <strong>{sprint.behavior_name}</strong>?
+      {/* Checkin section — clearly scoped to selectedDate */}
+      <div style={{ background: s.surface, border: `1px solid ${s.border}`, borderRadius: 16, padding: '16px 20px', marginBottom: 0 }}>
+        <div style={{ fontSize: 11, color: s.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
+          Чекин · {checkinDateLabel}
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: (done === 'no' || done === 'partial') ? 12 : 0 }}>
           {([['yes', '✓ Да', '#7ab87a'], ['partial', '≈ Частично', '#c8a86e'], ['no', '× Нет', '#e07070']]).map(([val, label, color]) => (
             <button
               key={val}
@@ -109,7 +118,7 @@ function SprintCard({ sprint, weekDays, done, barrier, onDoneChange, onBarrierCh
               style={{
                 flex: 1, padding: '12px 8px', borderRadius: 12,
                 border: `1px solid ${done === val ? color : s.border}`,
-                background: done === val ? `${color}20` : s.surface,
+                background: done === val ? `${color}20` : s.surface2,
                 color: done === val ? color : s.dim,
                 fontSize: 13, fontWeight: done === val ? 500 : 300,
                 cursor: 'pointer', transition: 'all 0.15s',
@@ -119,22 +128,22 @@ function SprintCard({ sprint, weekDays, done, barrier, onDoneChange, onBarrierCh
             </button>
           ))}
         </div>
-      </div>
 
-      {(done === 'no' || done === 'partial') && (
-        <div style={{ marginTop: 12, animation: 'fadeUp 0.2s forwards' }}>
-          <div style={{ fontSize: 13, color: s.dim, marginBottom: 8 }}>Что помешало?</div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input
-              value={barrier}
-              onChange={e => onBarrierChange(e.target.value)}
-              placeholder="Коротко..."
-              style={{ flex: 1, background: s.surface, border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '10px 12px', color: s.text, fontFamily: "'DM Sans',sans-serif", fontSize: 13, outline: 'none' }}
-            />
-            <VoiceButton size={40} onResult={text => onBarrierChange(text)} />
+        {(done === 'no' || done === 'partial') && (
+          <div style={{ animation: 'fadeUp 0.2s forwards' }}>
+            <div style={{ fontSize: 12, color: s.dim, marginBottom: 8 }}>Что помешало?</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                value={barrier}
+                onChange={e => onBarrierChange(e.target.value)}
+                placeholder="Коротко..."
+                style={{ flex: 1, background: s.surface2, border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '10px 12px', color: s.text, fontFamily: "'DM Sans',sans-serif", fontSize: 13, outline: 'none' }}
+              />
+              <VoiceButton size={40} onResult={text => onBarrierChange(text)} />
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }
@@ -158,7 +167,7 @@ function CheckinContent() {
 
   // Physio
   const [sleepQuality, setSleepQuality] = useState(null)
-  const [wakeTime, setWakeTime] = useState('')
+  const [wakeTime, setWakeTime] = useState('07:00')
   const [workout, setWorkout] = useState(null)
   const [steps, setSteps] = useState('')
   const [anxietyLevel, setAnxietyLevel] = useState(null)
@@ -250,7 +259,7 @@ function CheckinContent() {
     if (logData) {
       setWellbeing({ energy: logData.energy, mood: logData.mood, meaning: logData.meaning, connection: logData.connection })
       setSleepQuality(logData.sleep_quality)
-      setWakeTime(logData.wake_time || '')
+      setWakeTime(logData.wake_time || '07:00')
       setWorkout(logData.workout)
       setSteps(logData.steps?.toString() || '')
       setAnxietyLevel(logData.anxiety_level)
@@ -378,6 +387,8 @@ function CheckinContent() {
                       barrier={barriers[id] ?? ''}
                       onDoneChange={val => setSprintDones(prev => ({ ...prev, [id]: val }))}
                       onBarrierChange={val => setBarriers(prev => ({ ...prev, [id]: val }))}
+                      selectedDate={selectedDate}
+                      today={today}
                     />
                   )
                 })}
