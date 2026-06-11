@@ -49,6 +49,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'userId and message required' }, { status: 400 })
     }
 
+    // Verify that the request comes from the owner of userId
+    const authHeader = req.headers.get('authorization')
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser(token)
+    if (authError || !authUser || authUser.id !== userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     // Собираем полный контекст пользователя
     const ctx = await getUserContext(userId)
     const contextText = formatContextForPrompt(ctx)

@@ -90,9 +90,15 @@ function AssistantContent() {
         content: m.content,
       }))
 
+      const { data: sessionData } = await supabase.auth.getSession()
+      const accessToken = sessionData?.session?.access_token ?? ''
+
       const res = await fetch('/api/deep-analysis', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({
           message: msg,
           history: historyForApi,

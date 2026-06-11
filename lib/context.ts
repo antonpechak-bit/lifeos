@@ -42,64 +42,28 @@ export interface UserContext {
   activity_analysis: ActivityAnalysis
 }
 
-// ─── Оценка статуса биомаркера ────────────────────────────────
+// ─── Оценка статуса биомаркера по ref_min/ref_max из данных ──
 
-const BIOMARKER_RANGES: Record<string, { optimal: [number, number] | null; low?: number; high?: number }> = {
-  glucose:            { optimal: [4.0, 5.5] },
-  hba1c:              { optimal: null, high: 5.7 },
-  insulin:            { optimal: [3, 25] },
-  cholesterol_ldl:    { optimal: null, high: 2.5 },
-  cholesterol_hdl:    { optimal: [1.2, 99] },
-  cholesterol_total:  { optimal: null, high: 5.0 },
-  triglycerides:      { optimal: null, high: 1.7 },
-  crp:                { optimal: null, high: 1.0 },
-  homocysteine:       { optimal: null, high: 9 },
-  testosterone_total: { optimal: [15, 35] },
-  testosterone_free:  { optimal: [0.2, 0.6] },
-  cortisol:           { optimal: [300, 500] },
-  tsh:                { optimal: [1.0, 2.5] },
-  vitamin_d:          { optimal: [75, 999] },
-  vitamin_b12:        { optimal: [300, 999] },
-  ferritin:           { optimal: [70, 150] },
-  iron:               { optimal: [10, 30] },
-  magnesium:          { optimal: [0.85, 1.1] },
-  omega3_index:       { optimal: [8, 999] },
-  hemoglobin:         { optimal: [130, 170] },
-  wbc:                { optimal: [4, 9] },
-  platelets:          { optimal: [150, 400] },
-}
-
-const BIOMARKER_LABELS: Record<string, string> = {
-  glucose: 'Глюкоза', hba1c: 'HbA1c', insulin: 'Инсулин',
-  cholesterol_ldl: 'LDL', cholesterol_hdl: 'HDL', cholesterol_total: 'Холестерин',
-  triglycerides: 'Триглицериды', crp: 'СРБ', homocysteine: 'Гомоцистеин',
-  testosterone_total: 'Тестостерон общий', testosterone_free: 'Тестостерон свободный',
-  cortisol: 'Кортизол', tsh: 'ТТГ', vitamin_d: 'Витамин D',
-  vitamin_b12: 'Витамин B12', ferritin: 'Ферритин', iron: 'Железо',
-  magnesium: 'Магний', omega3_index: 'Омега-3', hemoglobin: 'Гемоглобин',
-  wbc: 'Лейкоциты', platelets: 'Тромбоциты',
-}
-
-function getBiomarkerStatus(key: string, value: number): 'optimal' | 'warning' | 'danger' | 'unknown' {
-  const range = BIOMARKER_RANGES[key]
-  if (!range) return 'unknown'
-  if (range.optimal) {
-    const [lo, hi] = range.optimal
-    if (value >= lo && value <= hi) return 'optimal'
-    if (value < lo * 0.7 || value > hi * 1.5) return 'danger'
+function getBiomarkerStatusFromRef(
+  value: number,
+  ref_min: number | null,
+  ref_max: number | null,
+): 'optimal' | 'warning' | 'danger' | 'unknown' {
+  if (ref_min == null && ref_max == null) return 'unknown'
+  if (ref_min != null && ref_max != null) {
+    if (value >= ref_min && value <= ref_max) return 'optimal'
+    if (value < ref_min * 0.7 || value > ref_max * 1.5) return 'danger'
     return 'warning'
   }
-  if (range.high !== undefined) {
-    if (value < range.high) return 'optimal'
-    if (value < range.high * 1.5) return 'warning'
+  if (ref_max != null) {
+    if (value <= ref_max) return 'optimal'
+    if (value <= ref_max * 1.5) return 'warning'
     return 'danger'
   }
-  if (range.low !== undefined) {
-    if (value > range.low) return 'optimal'
-    if (value > range.low * 0.7) return 'warning'
-    return 'danger'
-  }
-  return 'unknown'
+  // ref_min only
+  if (value >= ref_min!) return 'optimal'
+  if (value >= ref_min! * 0.7) return 'warning'
+  return 'danger'
 }
 
 function calcTrend(values: { date: string; value: number }[]): 'rising' | 'falling' | 'stable' | 'insufficient_data' {
@@ -170,8 +134,6 @@ function calcHealthTrends(rows: any[]): HealthTrends {
 // ─── Главная функция ──────────────────────────────────────────
 
 export async function getUserContext(userId: string): Promise<UserContext> {
-  const BIOMARKER_KEYS = Object.keys(BIOMARKER_LABELS)
-
   const thirtyDaysAgo = new Date()
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
   const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().slice(0, 10)
@@ -220,13 +182,13 @@ export async function getUserContext(userId: string): Promise<UserContext> {
       .limit(1)
       .single(),
 
-    // Все чекапы для динамики
+    // Все биомаркеры для динамики
     supabaseAdmin
-      .from('health_metrics')
-      .select('*')
+      .from('health_biomarkers')
+      .select('key, name, value, unit, ref_min, ref_max, is_flagged, date')
       .eq('user_id', userId)
       .order('date', { ascending: false })
-      .limit(50),
+      .limit(200),
 
     // Активные рекомендации
     supabaseAdmin
@@ -248,28 +210,35 @@ export async function getUserContext(userId: string): Promise<UserContext> {
 
   const healthRows = healthRes.data || []
 
-  // Собираем тренды по каждому биомаркеру
+  // Group rows by biomarker key; each row has key/name/value/unit/ref_min/ref_max/is_flagged/date
+  const grouped: Record<string, any[]> = {}
+  for (const row of healthRows) {
+    if (row.key == null || row.value == null) continue
+    if (!grouped[row.key]) grouped[row.key] = []
+    grouped[row.key].push(row)
+  }
+
   const biomarkerTrends: BiomarkerTrend[] = []
   const latestBiomarkers: Record<string, number> = {}
 
-  for (const key of BIOMARKER_KEYS) {
-    const points = healthRows
-      .filter(row => row[key] != null)
-      .map(row => ({ date: row.date, value: row[key] as number }))
+  for (const [key, rows] of Object.entries(grouped)) {
+    const points = rows
+      .map(r => ({ date: r.date as string, value: r.value as number }))
       .sort((a, b) => a.date.localeCompare(b.date))
 
     if (points.length === 0) continue
 
-    const latest = points[points.length - 1].value
+    const latestRow = rows.reduce((a, b) => (a.date > b.date ? a : b))
+    const latest = latestRow.value as number
     latestBiomarkers[key] = latest
 
     biomarkerTrends.push({
       key,
-      label: BIOMARKER_LABELS[key],
+      label: (latestRow.name as string) || key,
       values: points,
       trend: calcTrend(points),
       latest,
-      status: getBiomarkerStatus(key, latest),
+      status: getBiomarkerStatusFromRef(latest, latestRow.ref_min ?? null, latestRow.ref_max ?? null),
     })
   }
 

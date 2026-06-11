@@ -208,6 +208,11 @@ export async function POST(req: NextRequest) {
     (Array.isArray((body.data as any)?.metrics) || Array.isArray((body.data as any)?.workouts))
 
   if (isHealthAutoExport) {
+    const apiKey = req.nextUrl.searchParams.get('key')
+    if (!apiKey || apiKey !== process.env.HEALTH_SYNC_API_KEY) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const userId = req.nextUrl.searchParams.get('user_id')
     if (!userId) {
       return NextResponse.json({ error: 'user_id query param required' }, { status: 400 })
