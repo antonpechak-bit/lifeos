@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { analyzeActivity } from '@/lib/activity-analysis'
 
 // ── Dimension config — new emotional color palette ─────────────
 const DIM = {
@@ -247,6 +248,97 @@ function SprintCard({ sprint, checkins, today, router }) {
   )
 }
 
+// ── Activity Card ──────────────────────────────────────────────
+const ACTIVITY_COLOR = '#FFB84D'
+
+function ActivityCard({ analysis, router }) {
+  const { weekly, vo2max, gaps } = analysis
+  const hasWorkouts = weekly.total_workout_minutes > 0 || weekly.avg_steps > 0
+
+  if (!hasWorkouts && gaps.length === 0) return null
+
+  const severityDot = { high: '#FF5A5A', medium: '#FFB84D', low: 'rgba(255,255,255,0.35)' }
+
+  const stats = [
+    { label: 'Сила',      value: weekly.strength_sessions,  unit: 'сес' },
+    { label: 'Кардио',    value: weekly.cardio_sessions,     unit: 'сес' },
+    { label: 'Моб-ть',    value: weekly.mobility_sessions,   unit: 'сес' },
+    { label: 'Zone 2',    value: weekly.zone2_minutes,       unit: 'мин' },
+  ].filter(st => st.value > 0)
+
+  return (
+    <div style={{
+      background:  'linear-gradient(155deg,rgba(255,184,77,0.08) 0%,rgba(255,255,255,0.02) 100%)',
+      backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
+      borderRadius: 32, padding: '22px 20px 18px',
+      border: `1px solid ${ACTIVITY_COLOR}1A`,
+      position: 'relative', overflow: 'hidden',
+      boxShadow: `0 0 60px ${ACTIVITY_COLOR}08, 0 20px 60px rgba(0,0,0,0.25)`,
+      animation: 'fadeUp 0.8s ease forwards',
+    }}>
+      <div style={{ position: 'absolute', bottom: -40, right: -40, width: 180, height: 180, borderRadius: '50%', background: `radial-gradient(circle,${ACTIVITY_COLOR}18 0%,transparent 65%)`, animation: 'orbFloat 8s ease-in-out infinite', pointerEvents: 'none' }} />
+
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, position: 'relative' }}>
+        <div style={{ fontSize: 11, color: ACTIVITY_COLOR, opacity: 0.8, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+          🏃 Активность · неделя
+        </div>
+        {vo2max.latest && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: `${ACTIVITY_COLOR}12`, border: `1px solid ${ACTIVITY_COLOR}28`, borderRadius: 999, padding: '4px 12px' }}>
+            <span style={{ fontSize: 12, color: ACTIVITY_COLOR, fontWeight: 600 }}>VO₂max {vo2max.latest.toFixed(1)}</span>
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>
+              {vo2max.trend === 'rising' ? '↑' : vo2max.trend === 'falling' ? '↓' : '→'}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Workout stats row */}
+      {stats.length > 0 && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', position: 'relative' }}>
+          {stats.map((st, i) => (
+            <div key={i} style={{
+              background: `${ACTIVITY_COLOR}0E`, border: `1px solid ${ACTIVITY_COLOR}22`,
+              borderRadius: 14, padding: '8px 14px', textAlign: 'center', flex: '1 1 auto',
+            }}>
+              <div style={{ fontSize: 20, fontWeight: 700, color: ACTIVITY_COLOR, lineHeight: 1 }}>{st.value}</div>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.40)', marginTop: 3 }}>{st.label}</div>
+            </div>
+          ))}
+          {weekly.avg_steps > 0 && (
+            <div style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: '8px 14px', textAlign: 'center', flex: '1 1 auto' }}>
+              <div style={{ fontSize: 20, fontWeight: 700, color: 'rgba(255,255,255,0.7)', lineHeight: 1 }}>{(weekly.avg_steps / 1000).toFixed(1)}k</div>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginTop: 3 }}>Шаги/день</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Gap pills */}
+      {gaps.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7, position: 'relative' }}>
+          {gaps.map((gap, i) => (
+            <button
+              key={i}
+              onClick={() => router.push('/assistant')}
+              style={{
+                width: '100%', textAlign: 'left', cursor: 'pointer',
+                background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+                borderRadius: 14, padding: '10px 14px',
+                display: 'flex', alignItems: 'flex-start', gap: 10,
+                transition: 'all 0.15s',
+              }}
+            >
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: severityDot[gap.severity], flexShrink: 0, marginTop: 5, boxShadow: gap.severity !== 'low' ? `0 0 8px ${severityDot[gap.severity]}80` : 'none' }} />
+              <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.50)', lineHeight: 1.55 }}>{gap.message}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Bottom Nav — floating pill ─────────────────────────────────
 function BottomNav({ router }) {
   const items = [
@@ -296,6 +388,7 @@ export default function Dashboard() {
   const [sprints, setSprints]         = useState([])
   const [todayLog, setTodayLog]       = useState(null)
   const [weekLogs, setWeekLogs]       = useState([])
+  const [monthLogs, setMonthLogs]     = useState([])
   const [checkins, setCheckins]       = useState([])
   const [loading, setLoading]         = useState(true)
   const [showHistory, setShowHistory] = useState(false)
@@ -311,19 +404,23 @@ export default function Dashboard() {
         const u = data.session.user
         setUser(u)
 
-        const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7)
-        const weekStr = weekAgo.toISOString().split('T')[0]
+        const weekAgo  = new Date(); weekAgo.setDate(weekAgo.getDate() - 7)
+        const monthAgo = new Date(); monthAgo.setDate(monthAgo.getDate() - 30)
+        const weekStr  = weekAgo.toISOString().split('T')[0]
+        const monthStr = monthAgo.toISOString().split('T')[0]
 
         const [
           { data: sess },
           { data: spr },
           { data: logs },
           { data: checkData },
+          { data: mLogs },
         ] = await Promise.all([
           supabase.from('sessions').select('*').eq('user_id', u.id).order('created_at', { ascending: false }),
           supabase.from('sprints').select('*').eq('user_id', u.id).eq('status','active').order('created_at', { ascending: false }),
           supabase.from('daily_logs').select('*').eq('user_id', u.id).gte('date', weekStr).order('date'),
           supabase.from('checkins').select('*').eq('user_id', u.id).gte('date', weekStr),
+          supabase.from('daily_logs').select('date,steps,workout_minutes,workout_type,vo2max').eq('user_id', u.id).gte('date', monthStr).order('date'),
         ])
 
         const { data: todayLogData } = await supabase
@@ -332,6 +429,7 @@ export default function Dashboard() {
         setSessions(sess || [])
         setSprints(spr || [])
         setWeekLogs(logs || [])
+        setMonthLogs(mLogs || [])
         setTodayLog(todayLogData || null)
         setCheckins(checkData || [])
       } catch (e) {
@@ -373,7 +471,8 @@ export default function Dashboard() {
       return { name: parts[0], why: parts[1] }
     }) || []
 
-  const hasDimData = todayLog && (todayLog.energy || todayLog.mood || todayLog.meaning || todayLog.connection)
+  const hasDimData        = todayLog && (todayLog.energy || todayLog.mood || todayLog.meaning || todayLog.connection)
+  const activityAnalysis  = analyzeActivity(monthLogs)
 
   const wellbeingIndex = todayLog?.wellbeing_index
     ? parseFloat(todayLog.wellbeing_index)
@@ -613,6 +712,9 @@ export default function Dashboard() {
                 )}
               </div>
             )}
+
+            {/* ── ACTIVITY CARD ─────────────────────────────── */}
+            <ActivityCard analysis={activityAnalysis} router={router} />
 
             {/* ── ACTIVE SPRINTS ────────────────────────────── */}
             {activeSprints.length > 0 && (
