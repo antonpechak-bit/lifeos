@@ -17,6 +17,18 @@ export interface BiomarkerTrend {
   status: 'optimal' | 'warning' | 'danger' | 'unknown'
 }
 
+export interface HealthTrends {
+  avg_sleep_7d: number | null
+  avg_sleep_30d: number | null
+  avg_hrv_7d: number | null
+  avg_hrv_30d: number | null
+  hrv_trend: 'rising' | 'falling' | 'stable' | 'insufficient_data'
+  avg_steps_7d: number | null
+  workouts_7d: number
+  workouts_7d_types: string[]
+  recent_days: { date: string; sleep_hours: number | null; hrv: number | null; steps: number | null; resting_heart_rate: number | null }[]
+}
+
 export interface UserContext {
   state_map: string | null
   active_sprints: any[]
@@ -25,6 +37,7 @@ export interface UserContext {
   latest_biomarkers: Record<string, number>
   biomarker_trends: BiomarkerTrend[]
   active_recommendations: any[]
+  health_trends: HealthTrends
 }
 
 // ─── Оценка статуса биомаркера ────────────────────────────────
@@ -98,10 +111,68 @@ function calcTrend(values: { date: string; value: number }[]): 'rising' | 'falli
   return 'stable'
 }
 
+function avg(nums: number[]): number | null {
+  const valid = nums.filter(n => n != null && !isNaN(n))
+  return valid.length > 0 ? valid.reduce((a, b) => a + b, 0) / valid.length : null
+}
+
+function calcHealthTrends(rows: any[]): HealthTrends {
+  // rows are ordered desc by date; sort asc for slicing
+  const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date))
+  const last30 = sorted.slice(-30)
+  const last7  = sorted.slice(-7)
+
+  const sleep30 = last30.map(r => r.sleep_hours).filter(v => v != null)
+  const sleep7  = last7.map(r => r.sleep_hours).filter(v => v != null)
+  const hrv30   = last30.map(r => r.hrv).filter(v => v != null)
+  const hrv7    = last7.map(r => r.hrv).filter(v => v != null)
+  const steps7  = last7.map(r => r.steps).filter(v => v != null)
+
+  // HRV trend: last 3 days vs preceding 3 days (days 4-6 of the 7-day window)
+  const hrvRecent   = last7.slice(-3).map(r => r.hrv).filter(v => v != null)
+  const hrvPrevious = last7.slice(-7, -3).map(r => r.hrv).filter(v => v != null)
+  let hrv_trend: HealthTrends['hrv_trend'] = 'insufficient_data'
+  if (hrvRecent.length >= 1 && hrvPrevious.length >= 1) {
+    const recentAvg   = avg(hrvRecent)!
+    const previousAvg = avg(hrvPrevious)!
+    const change = (recentAvg - previousAvg) / previousAvg
+    hrv_trend = change > 0.1 ? 'rising' : change < -0.1 ? 'falling' : 'stable'
+  }
+
+  const workoutDays = last7.filter(r => r.workout_minutes != null && r.workout_minutes > 0)
+  const workoutTypes = [...new Set(
+    workoutDays.map(r => r.workout_type).filter(Boolean)
+  )] as string[]
+
+  const recent_days = last7.map(r => ({
+    date: r.date,
+    sleep_hours: r.sleep_hours ?? null,
+    hrv: r.hrv ?? null,
+    steps: r.steps ?? null,
+    resting_heart_rate: r.resting_heart_rate ?? null,
+  }))
+
+  return {
+    avg_sleep_7d:    avg(sleep7),
+    avg_sleep_30d:   avg(sleep30),
+    avg_hrv_7d:      avg(hrv7),
+    avg_hrv_30d:     avg(hrv30),
+    hrv_trend,
+    avg_steps_7d:    avg(steps7),
+    workouts_7d:     workoutDays.length,
+    workouts_7d_types: workoutTypes,
+    recent_days,
+  }
+}
+
 // ─── Главная функция ──────────────────────────────────────────
 
 export async function getUserContext(userId: string): Promise<UserContext> {
   const BIOMARKER_KEYS = Object.keys(BIOMARKER_LABELS)
+
+  const thirtyDaysAgo = new Date()
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+  const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().slice(0, 10)
 
   const [
     sessionRes,
@@ -110,6 +181,7 @@ export async function getUserContext(userId: string): Promise<UserContext> {
     weeklyRes,
     healthRes,
     recommendationsRes,
+    dailyLogsRes,
   ] = await Promise.all([
     // Последняя завершённая сессия с State Map
     supabaseAdmin
@@ -162,6 +234,14 @@ export async function getUserContext(userId: string): Promise<UserContext> {
       .eq('status', 'active')
       .order('created_at', { ascending: false })
       .limit(10),
+
+    // Данные с носимых устройств — последние 30 дней
+    supabaseAdmin
+      .from('daily_logs')
+      .select('user_id, date, sleep_hours, hrv, steps, resting_heart_rate, workout_minutes, workout_type')
+      .eq('user_id', userId)
+      .gte('date', thirtyDaysAgoStr)
+      .order('date', { ascending: false }),
   ])
 
   const healthRows = healthRes.data || []
@@ -199,6 +279,7 @@ export async function getUserContext(userId: string): Promise<UserContext> {
     latest_biomarkers: latestBiomarkers,
     biomarker_trends: biomarkerTrends,
     active_recommendations: recommendationsRes.data || [],
+    health_trends: calcHealthTrends(dailyLogsRes.data || []),
   }
 }
 
@@ -259,6 +340,22 @@ export function formatContextForPrompt(ctx: UserContext): string {
       `- [${r.priority}] ${r.title}`
     )
     parts.push(`## Активные рекомендации\n${recLines.join('\n')}`)
+  }
+
+  const ht = ctx.health_trends
+  const hasWearableData = ht.recent_days.some(
+    d => d.sleep_hours != null || d.hrv != null || d.steps != null || d.resting_heart_rate != null
+  )
+  if (hasWearableData) {
+    const fmt1 = (v: number | null, unit = '') => v != null ? `${Math.round(v)}${unit}` : '—'
+    const fmtF = (v: number | null, unit = '') => v != null ? `${v.toFixed(1)}${unit}` : '—'
+    const wLines: string[] = [
+      `- Сон: среднее ${fmtF(ht.avg_sleep_7d, ' ч')} (30 дней: ${fmtF(ht.avg_sleep_30d, ' ч')})`,
+      `- HRV: среднее ${fmt1(ht.avg_hrv_7d, ' мс')}, тренд: ${ht.hrv_trend}`,
+      `- Шаги: среднее ${fmt1(ht.avg_steps_7d)}`,
+      `- Тренировки за неделю: ${ht.workouts_7d}${ht.workouts_7d_types.length > 0 ? ` (типы: ${ht.workouts_7d_types.join(', ')})` : ''}`,
+    ]
+    parts.push(`## Данные с носимых устройств (последние 7 дней)\n${wLines.join('\n')}`)
   }
 
   return parts.join('\n\n')
