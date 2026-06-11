@@ -6,6 +6,21 @@ import { supabase, Message } from '@/lib/supabase'
 import { LAYERS, OPENING_MESSAGE } from '@/lib/prompts'
 import { VoiceButton } from '@/lib/VoiceButton'
 
+// ── Design tokens ──────────────────────────────────────────────
+const s = {
+  bg:          '#07090D',
+  text:        '#F2F0EA',
+  dim:         'rgba(255,255,255,0.50)',
+  muted:       'rgba(255,255,255,0.28)',
+  faint:       'rgba(255,255,255,0.07)',
+  energy:      '#6AA8FF',
+  recovery:    '#52FF9A',
+  mindfulness: '#B18DFF',
+  stress:      '#FFB84D',
+  overload:    '#FF5A5A',
+}
+
+// ── Logic (unchanged) ──────────────────────────────────────────
 function detectLayer(text: string): number | null {
   const t = text.toLowerCase()
   if (t.includes('как ты сейчас') || t.includes('вкус') || t.includes('последнее время')) return 1
@@ -64,47 +79,48 @@ function parseStateMap(raw: string): StateMapData {
   return { sections, priorities, nextStep }
 }
 
-function StateMapCard({ raw }: { raw: string }) {
+// ── State Map Card — glassmorphism ─────────────────────────────
+function StateMapCard({ raw, sessionId }: { raw: string; sessionId: string | null }) {
   const { sections, priorities, nextStep } = parseStateMap(raw)
 
   const sectionList = [
-    { key: 'overview', label: 'Общая картина' },
-    { key: 'working', label: 'Что работает ✓' },
-    { key: 'attention', label: 'Что требует внимания ◎' },
-    { key: 'blind', label: 'Слепые пятна ?' },
-    { key: 'therapist', label: 'Для терапевта 🔍' },
+    { key: 'overview',   label: 'Общая картина',           color: s.energy },
+    { key: 'working',    label: 'Что работает ✓',           color: s.recovery },
+    { key: 'attention',  label: 'Что требует внимания ◎',   color: s.stress },
+    { key: 'blind',      label: 'Слепые пятна ?',           color: s.mindfulness },
+    { key: 'therapist',  label: 'Для терапевта 🔍',          color: s.muted },
   ]
 
   return (
     <div style={{
-      background: 'var(--surface)',
-      border: '1px solid var(--accent-border)',
-      borderRadius: 16,
-      padding: 24,
-      maxWidth: 560,
-      fontSize: 13,
-      lineHeight: 1.8,
+      background: 'linear-gradient(155deg,rgba(255,255,255,0.09) 0%,rgba(255,255,255,0.03) 100%)',
+      backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
+      border: `1px solid ${s.energy}28`,
+      borderRadius: 28, padding: '22px 20px',
+      boxShadow: `0 0 60px ${s.energy}10, 0 20px 60px rgba(0,0,0,0.4)`,
+      marginTop: 10,
     }}>
       <div style={{
-        fontFamily: "'Playfair Display', serif",
-        fontSize: 16,
-        color: 'var(--accent)',
-        marginBottom: 16,
-        paddingBottom: 14,
-        borderBottom: '1px solid var(--border)',
+        fontFamily: "'Playfair Display',serif",
+        fontSize: 15, fontWeight: 600, color: s.energy,
+        marginBottom: 18, paddingBottom: 14,
+        borderBottom: '1px solid rgba(255,255,255,0.07)',
+        display: 'flex', alignItems: 'center', gap: 8,
       }}>
         🧬 State Map — {new Date().toLocaleDateString('ru', { day: 'numeric', month: 'long', year: 'numeric' })}
       </div>
 
-      {sectionList.map(({ key, label }) => sections[key] ? (
+      {sectionList.map(({ key, label, color }) => sections[key] ? (
         <div key={key} style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--text-dim)', marginBottom: 6 }}>
+          <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', color, opacity: 0.7, marginBottom: 7 }}>
             {label}
           </div>
-          <div style={{ color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
+          <div style={{ fontSize: 13, color: s.dim, lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>
             {sections[key].split('•').filter(Boolean).map((item, i) => (
               <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 3 }}>
-                {(i > 0 || sections[key].startsWith('•')) && <span style={{ color: 'var(--accent)', flexShrink: 0 }}>•</span>}
+                {(i > 0 || sections[key].startsWith('•')) && (
+                  <span style={{ color, opacity: 0.6, flexShrink: 0 }}>•</span>
+                )}
                 <span>{item.trim()}</span>
               </div>
             ))}
@@ -114,23 +130,21 @@ function StateMapCard({ raw }: { raw: string }) {
 
       {priorities.length > 0 && (
         <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--text-dim)', marginBottom: 10 }}>
+          <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', color: s.muted, marginBottom: 10 }}>
             Фокус на 2–3 месяца
           </div>
           {priorities.map(p => (
             <div key={p.n} style={{
-              background: 'var(--surface2)',
-              border: '1px solid var(--border)',
-              borderRadius: 10,
-              padding: '12px 14px',
-              marginBottom: 8,
+              background: 'rgba(255,255,255,0.04)',
+              border: '1px solid rgba(255,255,255,0.07)',
+              borderRadius: 16, padding: '12px 14px', marginBottom: 8,
             }}>
-              <div style={{ fontSize: 10, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>
+              <div style={{ fontSize: 10, color: s.energy, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>
                 Приоритет {p.n}
               </div>
-              <div style={{ fontWeight: 500, color: 'var(--text)', marginBottom: 4 }}>{p.name}</div>
-              {p.why && <div style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 4 }}>{p.why}</div>}
-              {p.step && <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>→ {p.step}</div>}
+              <div style={{ fontSize: 13, fontWeight: 500, color: s.text, marginBottom: p.why ? 4 : 0 }}>{p.name}</div>
+              {p.why  && <div style={{ fontSize: 12, color: s.dim, marginBottom: p.step ? 4 : 0 }}>{p.why}</div>}
+              {p.step && <div style={{ fontSize: 12, color: s.muted }}>→ {p.step}</div>}
             </div>
           ))}
         </div>
@@ -138,20 +152,35 @@ function StateMapCard({ raw }: { raw: string }) {
 
       {nextStep && (
         <div style={{
-          background: 'var(--accent-dim)',
-          border: '1px solid var(--accent-border)',
-          borderRadius: 10,
-          padding: '12px 14px',
-          fontSize: 13,
-          color: 'var(--accent)',
+          background: `${s.energy}10`, border: `1px solid ${s.energy}28`,
+          borderRadius: 14, padding: '11px 14px',
+          fontSize: 13, color: s.energy,
         }}>
           → {nextStep}
         </div>
       )}
+
+      <button
+        onClick={() => {
+          const url = sessionId ? `/dashboard/priorities?session=${sessionId}` : '/dashboard/priorities'
+          window.location.href = url
+        }}
+        style={{
+          width: '100%', marginTop: 16, padding: '13px',
+          borderRadius: 999, border: 'none', cursor: 'pointer',
+          background: `linear-gradient(135deg,${s.energy} 0%,${s.mindfulness} 100%)`,
+          color: '#07090D', fontSize: 14, fontWeight: 600,
+          fontFamily: "'DM Sans',sans-serif",
+          boxShadow: `0 0 32px ${s.energy}40, 0 4px 20px ${s.energy}28`,
+        }}
+      >
+        Открыть карту приоритетов →
+      </button>
     </div>
   )
 }
 
+// ── Chat ───────────────────────────────────────────────────────
 function ChatContent() {
   const params = useSearchParams()
   const sessionId = params.get('session')
@@ -164,7 +193,6 @@ function ChatContent() {
   const [sessionLoaded, setSessionLoaded] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-
 
   useEffect(() => {
     if (sessionId && !sessionLoaded) {
@@ -189,7 +217,7 @@ function ChatContent() {
     const newMessages = [...messages, userMsg]
     setMessages(newMessages)
     setInput('')
-    if (textareaRef.current) { textareaRef.current.style.height = 'auto' }
+    if (textareaRef.current) textareaRef.current.style.height = 'auto'
     setLoading(true)
 
     try {
@@ -227,216 +255,232 @@ function ChatContent() {
     e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px'
   }
 
+  const canSend = !loading && input.trim().length > 0
+
   return (
-    <div style={{ display: 'flex', height: '100vh', flexDirection: 'column' }}>
+    <div style={{
+      display: 'flex', flexDirection: 'column', height: '100dvh',
+      background: s.bg, color: s.text,
+      fontFamily: "'DM Sans',-apple-system,sans-serif", fontWeight: 300,
+    }}>
+      <style>{`
+        @keyframes td   { 0%,60%,100%{transform:translateY(0);opacity:0.35} 30%{transform:translateY(-5px);opacity:1} }
+        @keyframes orbFloat { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(10px,-8px) scale(1.06)} }
+        @keyframes fadeUp   { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+        textarea::placeholder { color: rgba(255,255,255,0.25) }
+        textarea:focus { outline: none }
+        .msg-scroll::-webkit-scrollbar { width: 3px }
+        .msg-scroll::-webkit-scrollbar-track { background: transparent }
+        .msg-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 999px }
+      `}</style>
+
+      {/* ── Header ── */}
       <header style={{
-        padding: '16px 24px',
-        borderBottom: '1px solid var(--border)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexShrink: 0,
+        padding: '14px 20px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        background: 'rgba(7,9,13,0.85)',
+        backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
+        borderBottom: '1px solid rgba(255,255,255,0.07)',
+        flexShrink: 0, position: 'relative', zIndex: 10,
       }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-          <span style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, color: 'var(--accent)' }}>Life OS</span>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Диагностика</span>
+          <span style={{ fontFamily: "'Playfair Display',serif", fontSize: 17, color: s.text, opacity: 0.9 }}>Life OS</span>
+          <span style={{ fontSize: 10, color: s.muted, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Диагностика</span>
         </div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+
+        {/* Layer progress dots */}
+        <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
           {LAYERS.map((l, i) => (
-            <div key={l.id} style={{
-              width: i === currentLayer ? 20 : 6,
-              height: 6,
-              borderRadius: 3,
-              background: i < currentLayer ? 'var(--accent)' : i === currentLayer ? l.color : 'var(--surface2)',
-              transition: 'all 0.4s',
-              opacity: i > currentLayer ? 0.3 : 1,
-            }} title={l.label} />
+            <div
+              key={l.id}
+              title={l.label}
+              style={{
+                width: i === currentLayer ? 18 : 5,
+                height: 5, borderRadius: 999,
+                background: i < currentLayer
+                  ? s.recovery
+                  : i === currentLayer
+                    ? s.energy
+                    : 'rgba(255,255,255,0.12)',
+                transition: 'all 0.4s',
+                boxShadow: i === currentLayer ? `0 0 8px ${s.energy}80` : 'none',
+              }}
+            />
           ))}
         </div>
       </header>
 
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        <aside style={{
-          width: 200,
-          borderRight: '1px solid var(--border)',
-          padding: '20px 12px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 2,
-          background: 'var(--surface)',
-          flexShrink: 0,
-          overflowY: 'auto',
-        }}>
-          <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', padding: '0 8px', marginBottom: 10 }}>
-            Слои
-          </div>
-          {LAYERS.map((l, i) => (
-            <div key={l.id} style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '8px 10px',
-              borderRadius: 8,
-              fontSize: 12,
-              background: i === currentLayer ? 'var(--accent-dim)' : 'transparent',
-              border: i === currentLayer ? '1px solid var(--accent-border)' : '1px solid transparent',
-              color: i < currentLayer ? 'var(--text-muted)' : i === currentLayer ? 'var(--text)' : 'var(--text-dim)',
-              transition: 'all 0.2s',
-            }}>
-              <div style={{
-                width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
-                background: i < currentLayer ? 'var(--green)' : l.color,
-                opacity: i < currentLayer ? 1 : i === currentLayer ? 1 : 0.3,
-              }} />
-              <span style={{ flex: 1, fontWeight: i === currentLayer ? 500 : 300 }}>{l.label}</span>
-              {i < currentLayer && <span style={{ fontSize: 10, color: 'var(--green)' }}>✓</span>}
-            </div>
-          ))}
-        </aside>
+      {/* ── Messages ── */}
+      <div
+        className="msg-scroll"
+        style={{ flex: 1, overflowY: 'auto', padding: '24px 16px 8px', display: 'flex', flexDirection: 'column', gap: 14 }}
+      >
+        <div style={{ maxWidth: 560, margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {messages.map((msg, i) => {
+            const hasMap = msg.role === 'assistant' && msg.content.includes('[STATE_MAP_START]')
+            const preText = hasMap ? msg.content.split('[STATE_MAP_START]')[0].trim() : msg.content
+            const mapRaw = hasMap
+              ? (msg.content.split('[STATE_MAP_START]')[1]?.split('[STATE_MAP_END]')[0]?.trim() ?? '')
+              : ''
 
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ flex: 1, overflowY: 'auto', padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 20 }}>
-            {messages.map((msg, i) => {
-              const hasMap = msg.role === 'assistant' && msg.content.includes('[STATE_MAP_START]')
-              const preText = hasMap ? msg.content.split('[STATE_MAP_START]')[0].trim() : msg.content
-              const mapRaw = hasMap ? (msg.content.split('[STATE_MAP_START]')[1]?.split('[STATE_MAP_END]')[0]?.trim() ?? '') : ''
+            const isUser = msg.role === 'user'
 
-              return (
-                <div key={i} style={{
+            return (
+              <div
+                key={i}
+                style={{
                   display: 'flex',
-                  gap: 12,
-                  flexDirection: msg.role === 'user' ? 'row-reverse' : 'row',
-                }}>
-                  <div style={{
-                    width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 11, fontWeight: 500, marginTop: 2,
-                    background: msg.role === 'assistant' ? 'var(--surface2)' : 'var(--info)',
-                    border: `1px solid ${msg.role === 'assistant' ? 'var(--border)' : 'var(--info-border)'}`,
-                    color: msg.role === 'assistant' ? 'var(--text-dim)' : 'var(--info-text)',
-                  }}>
-                    {msg.role === 'assistant' ? 'L' : 'Я'}
-                  </div>
-                  <div style={{ maxWidth: 580 }}>
-                    {preText && (
-                      <div style={{
-                        padding: '12px 16px',
-                        borderRadius: msg.role === 'assistant' ? '4px 14px 14px 14px' : '14px 4px 14px 14px',
-                        background: msg.role === 'assistant' ? 'var(--surface)' : 'var(--info)',
-                        border: `1px solid ${msg.role === 'assistant' ? 'var(--border)' : 'var(--info-border)'}`,
-                        fontSize: 14,
-                        lineHeight: 1.75,
-                        whiteSpace: 'pre-wrap',
-                        color: msg.role === 'assistant' ? 'var(--text)' : 'var(--info-text)',
-                        textAlign: msg.role === 'user' ? 'right' : 'left',
-                      }}>
-                        {preText}
-                      </div>
-                    )}
-                    {hasMap && mapRaw && (
-                      <div style={{ marginTop: preText ? 12 : 0 }}>
-                        <StateMapCard raw={mapRaw} />
-                        <div style={{ marginTop: 14 }}>
-                          <button
-                            onClick={() => { const url = sessionId ? `/dashboard/priorities?session=${sessionId}` : '/dashboard/priorities'; window.location.href = url }}
-                            style={{ width:'100%', padding:'11px 20px', borderRadius:12, background:'var(--accent,#c8b89a)', color:'var(--bg,#0d0d0f)', border:'none', fontFamily:"'DM Sans',sans-serif", fontSize:13, fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
-                            Открыть карту приоритетов →
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-
-            {loading && (
-              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                <div style={{
-                  width: 30, height: 30, borderRadius: '50%',
-                  background: 'var(--surface2)', border: '1px solid var(--border)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 11, color: 'var(--text-dim)',
-                }}>L</div>
-                <div style={{
-                  background: 'var(--surface)', border: '1px solid var(--border)',
-                  borderRadius: '4px 14px 14px 14px', padding: '12px 16px',
-                  display: 'flex', gap: 5,
-                }}>
-                  {[0, 1, 2].map(i => (
-                    <div key={i} style={{
-                      width: 6, height: 6, borderRadius: '50%',
-                      background: 'var(--text-dim)',
-                      animation: `td 1.3s infinite ${i * 0.15}s`,
-                    }} />
-                  ))}
-                </div>
-                <style>{`@keyframes td{0%,60%,100%{transform:translateY(0);opacity:0.4}30%{transform:translateY(-5px);opacity:1}}`}</style>
-              </div>
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-
-          <div style={{
-            padding: '16px 24px',
-            borderTop: '1px solid var(--border)',
-            display: 'flex',
-            gap: 10,
-            alignItems: 'flex-end',
-            background: 'var(--bg)',
-            flexShrink: 0,
-          }}>
-            <div style={{
-              flex: 1,
-              background: 'var(--surface)',
-              border: '1px solid var(--border2)',
-              borderRadius: 14,
-              display: 'flex',
-              alignItems: 'flex-end',
-            }}>
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={autoResize}
-                onKeyDown={handleKey}
-                placeholder="Напиши свой ответ..."
-                rows={1}
-                style={{
-                  flex: 1,
-                  background: 'transparent',
-                  border: 'none',
-                  outline: 'none',
-                  color: 'var(--text)',
-                  fontFamily: "'DM Sans', sans-serif",
-                  fontSize: 14,
-                  fontWeight: 300,
-                  lineHeight: 1.6,
-                  padding: '12px 14px',
-                  resize: 'none',
-                  maxHeight: 160,
-                  overflowY: 'auto',
-                }}
-              />
-              <button
-                onClick={send}
-                disabled={loading || !input.trim()}
-                style={{
-                  width: 36, height: 36, margin: 6,
-                  borderRadius: 10,
-                  background: loading || !input.trim() ? 'var(--surface2)' : 'var(--accent)',
-                  border: 'none',
-                  cursor: loading || !input.trim() ? 'not-allowed' : 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  transition: 'all 0.2s',
-                  flexShrink: 0,
+                  flexDirection: isUser ? 'row-reverse' : 'row',
+                  gap: 10,
+                  animation: 'fadeUp 0.25s ease forwards',
                 }}
               >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill={loading || !input.trim() ? '#444' : '#0d0d0f'}>
-                  <path d="M2 21L23 12 2 3v7l15 2-15 2v7z"/>
-                </svg>
-              </button>
+                {/* Avatar dot */}
+                <div style={{
+                  width: 28, height: 28, borderRadius: '50%', flexShrink: 0, marginTop: 2,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 11, fontWeight: 600,
+                  background: isUser
+                    ? `linear-gradient(135deg,${s.energy},${s.mindfulness})`
+                    : 'rgba(255,255,255,0.07)',
+                  border: isUser ? 'none' : '1px solid rgba(255,255,255,0.1)',
+                  color: isUser ? '#07090D' : s.muted,
+                }}>
+                  {isUser ? 'Я' : '✦'}
+                </div>
+
+                <div style={{ maxWidth: 'calc(100% - 80px)', display: 'flex', flexDirection: 'column', gap: 8, alignItems: isUser ? 'flex-end' : 'flex-start' }}>
+                  {preText && (
+                    <div style={{
+                      padding: '11px 15px',
+                      borderRadius: isUser ? '18px 4px 18px 18px' : '4px 18px 18px 18px',
+                      background: isUser
+                        ? `linear-gradient(135deg,${s.energy}22,${s.mindfulness}18)`
+                        : 'linear-gradient(155deg,rgba(255,255,255,0.075) 0%,rgba(255,255,255,0.03) 100%)',
+                      backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+                      border: isUser
+                        ? `1px solid ${s.energy}30`
+                        : '1px solid rgba(255,255,255,0.08)',
+                      fontSize: 14, lineHeight: 1.75,
+                      whiteSpace: 'pre-wrap',
+                      color: isUser ? s.text : s.dim,
+                      boxShadow: isUser
+                        ? `0 4px 24px ${s.energy}12`
+                        : '0 4px 20px rgba(0,0,0,0.2)',
+                    }}>
+                      {preText}
+                    </div>
+                  )}
+
+                  {hasMap && mapRaw && (
+                    <StateMapCard raw={mapRaw} sessionId={sessionId} />
+                  )}
+                </div>
+              </div>
+            )
+          })}
+
+          {/* Typing indicator */}
+          {loading && (
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+              <div style={{
+                width: 28, height: 28, borderRadius: '50%',
+                background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 11, color: s.muted, flexShrink: 0,
+              }}>✦</div>
+              <div style={{
+                background: 'linear-gradient(155deg,rgba(255,255,255,0.07) 0%,rgba(255,255,255,0.025) 100%)',
+                backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: '4px 18px 18px 18px',
+                padding: '13px 16px', display: 'flex', gap: 5, alignItems: 'center',
+              }}>
+                {[0, 1, 2].map(i => (
+                  <div key={i} style={{
+                    width: 6, height: 6, borderRadius: '50%',
+                    background: s.energy, opacity: 0.6,
+                    animation: `td 1.3s infinite ${i * 0.15}s`,
+                  }} />
+                ))}
+              </div>
             </div>
+          )}
+
+          <div ref={messagesEndRef} />
+        </div>
+      </div>
+
+      {/* ── Input bar ── */}
+      <div style={{
+        padding: '12px 16px 20px',
+        background: 'rgba(7,9,13,0.92)',
+        backdropFilter: 'blur(32px)', WebkitBackdropFilter: 'blur(32px)',
+        borderTop: '1px solid rgba(255,255,255,0.07)',
+        flexShrink: 0,
+      }}>
+        <div style={{
+          maxWidth: 560, margin: '0 auto',
+          display: 'flex', gap: 8, alignItems: 'flex-end',
+        }}>
+          {/* Textarea wrapper */}
+          <div style={{
+            flex: 1,
+            background: 'linear-gradient(155deg,rgba(255,255,255,0.07) 0%,rgba(255,255,255,0.025) 100%)',
+            backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+            border: `1px solid ${input.trim() ? `${s.energy}35` : 'rgba(255,255,255,0.09)'}`,
+            borderRadius: 18, display: 'flex', alignItems: 'flex-end',
+            transition: 'border-color 0.2s',
+            boxShadow: input.trim() ? `0 0 24px ${s.energy}12` : 'none',
+          }}>
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={autoResize}
+              onKeyDown={handleKey}
+              placeholder="Напиши свой ответ..."
+              rows={1}
+              style={{
+                flex: 1, background: 'transparent', border: 'none',
+                color: s.text, fontFamily: "'DM Sans',sans-serif",
+                fontSize: 14, fontWeight: 300, lineHeight: 1.6,
+                padding: '12px 14px', resize: 'none',
+                maxHeight: 160, overflowY: 'auto',
+              }}
+            />
+            {/* Send button */}
+            <button
+              onClick={send}
+              disabled={!canSend}
+              style={{
+                width: 34, height: 34, margin: '7px 7px',
+                borderRadius: 12, border: 'none', flexShrink: 0,
+                background: canSend
+                  ? `linear-gradient(135deg,${s.energy},${s.mindfulness})`
+                  : 'rgba(255,255,255,0.06)',
+                cursor: canSend ? 'pointer' : 'not-allowed',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'all 0.2s',
+                boxShadow: canSend ? `0 0 16px ${s.energy}50` : 'none',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill={canSend ? '#07090D' : 'rgba(255,255,255,0.2)'}>
+                <path d="M2 21L23 12 2 3v7l15 2-15 2v7z"/>
+              </svg>
+            </button>
           </div>
+
+          {/* Voice button */}
+          <VoiceButton
+            size={48}
+            onResult={text => {
+              setInput(prev => (prev + ' ' + text).trim())
+              if (textareaRef.current) {
+                textareaRef.current.style.height = 'auto'
+                textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 160) + 'px'
+              }
+            }}
+          />
         </div>
       </div>
     </div>
