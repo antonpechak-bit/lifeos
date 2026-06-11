@@ -5,10 +5,16 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
 const s = {
-  bg:'#0d0d0f', surface:'#141416', surface2:'#1a1a1e',
-  border:'rgba(255,255,255,0.07)', border2:'rgba(255,255,255,0.12)',
-  text:'#e8e6e0', dim:'#7a7870', muted:'#3d3d3d', accent:'#c8b89a',
-  green:'#7ab87a', red:'#e07070', info:'#6ea8c8'
+  bg:          '#07090D',
+  text:        '#F2F0EA',
+  dim:         'rgba(255,255,255,0.50)',
+  muted:       'rgba(255,255,255,0.28)',
+  faint:       'rgba(255,255,255,0.07)',
+  energy:      '#6AA8FF',
+  recovery:    '#52FF9A',
+  mindfulness: '#B18DFF',
+  stress:      '#FFB84D',
+  overload:    '#FF5A5A',
 }
 
 const KEY_NAMES: Record<string, string> = {
@@ -39,12 +45,12 @@ function keyToName(key: string): string {
 }
 
 const GROUP_COLORS = {
-  metabolism:  '#c8a86e',
-  inflammation:'#e07070',
-  hormones:    '#a86ec8',
-  nutrition:   '#7ab87a',
-  blood:       '#6ea8c8',
-  other:       '#7a7870',
+  metabolism:  '#6AA8FF',
+  inflammation:'#FF5A5A',
+  hormones:    '#B18DFF',
+  nutrition:   '#52FF9A',
+  blood:       '#FFB84D',
+  other:       'rgba(255,255,255,0.40)',
 }
 
 function getGroupColor(key) {
@@ -58,9 +64,9 @@ function getGroupColor(key) {
 }
 
 const STATUS_COLORS = {
-  optimal:{ bg:'rgba(122,184,122,0.12)', border:'rgba(122,184,122,0.3)', text:'#7ab87a', dot:'#7ab87a' },
-  warning:{ bg:'rgba(200,184,154,0.1)',  border:'rgba(200,184,154,0.25)',text:'#c8b89a', dot:'#c8b89a' },
-  danger: { bg:'rgba(224,112,112,0.1)',  border:'rgba(224,112,112,0.25)',text:'#e07070', dot:'#e07070' },
+  optimal:{ bg:'rgba(82,255,154,0.10)',  border:'rgba(82,255,154,0.28)',  text:'#52FF9A', dot:'#52FF9A' },
+  warning:{ bg:'rgba(255,184,77,0.10)',  border:'rgba(255,184,77,0.25)',  text:'#FFB84D', dot:'#FFB84D' },
+  danger: { bg:'rgba(255,90,90,0.10)',   border:'rgba(255,90,90,0.25)',   text:'#FF5A5A', dot:'#FF5A5A' },
 }
 
 function getBiomarkerStatus(value, ref_min, ref_max, is_flagged) {
@@ -89,8 +95,6 @@ function smoothPath(coords) {
   return d
 }
 
-// ─── Glowing chart for biomarker cards ───────────────────────
-
 function GlowChart({ points, color, width = 150, height = 88 }) {
   if (!points || points.length < 2) return (
     <div style={{ width, height, display:'flex', alignItems:'center', justifyContent:'center' }}>
@@ -110,7 +114,7 @@ function GlowChart({ points, color, width = 150, height = 88 }) {
   ])
   const path = smoothPath(coords)
   const last = coords[coords.length - 1]
-  const uid = color.replace('#', 'c')
+  const uid = color.replace(/[^a-zA-Z0-9]/g, 'c')
   return (
     <svg width={width} height={height} style={{ flexShrink:0, overflow:'visible' }}>
       <defs>
@@ -128,45 +132,45 @@ function GlowChart({ points, color, width = 150, height = 88 }) {
   )
 }
 
-// ─── Welltory-style biomarker card ────────────────────────────
-
 function BiomarkerCard({ trend, isSelected, onClick }) {
   const color = getGroupColor(trend.key)
   const trendIcon = trend.trend === 'rising' ? '↑' : trend.trend === 'falling' ? '↓' : '→'
-  const trendColor = trend.trend === 'rising' ? s.green : trend.trend === 'falling' ? s.red : s.dim
+  const trendColor = trend.trend === 'rising' ? s.recovery : trend.trend === 'falling' ? s.overload : s.muted
 
   return (
     <div
       onClick={onClick}
       style={{
         position:'relative', width:'100%', height:120,
-        borderRadius:20,
-        background: s.surface,
-        border:`1px solid ${isSelected ? color + '88' : s.border}`,
+        borderRadius:24,
+        background: isSelected
+          ? 'linear-gradient(155deg,rgba(255,255,255,0.10) 0%,rgba(255,255,255,0.04) 100%)'
+          : 'linear-gradient(155deg,rgba(255,255,255,0.07) 0%,rgba(255,255,255,0.02) 100%)',
+        backdropFilter:'blur(40px)', WebkitBackdropFilter:'blur(40px)',
+        border:`1px solid ${isSelected ? color + '55' : 'rgba(255,255,255,0.08)'}`,
         overflow:'hidden', cursor:'pointer',
-        transition:'border-color 0.2s',
+        transition:'all 0.2s',
         display:'flex', alignItems:'stretch',
+        boxShadow: isSelected ? `0 0 40px ${color}20, 0 8px 40px rgba(0,0,0,0.3)` : '0 4px 20px rgba(0,0,0,0.2)',
       }}
     >
-      {/* Radial gradient accent */}
       <div style={{
         position:'absolute', inset:0,
         background:`radial-gradient(ellipse at 85% 50%, ${color}14 0%, transparent 60%)`,
         pointerEvents:'none',
       }} />
 
-      {/* Left: name + value */}
       <div style={{ flex:1, padding:'14px 16px', display:'flex', flexDirection:'column', justifyContent:'space-between', minWidth:0, position:'relative' }}>
         <div style={{ fontSize:11, color:s.dim, letterSpacing:'0.03em', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
           {trend.name}
-          {trend.latest.is_flagged && <span style={{ marginLeft:6, color:s.red }}>⚠</span>}
+          {trend.latest.is_flagged && <span style={{ marginLeft:6, color:s.overload }}>⚠</span>}
         </div>
         <div>
           <div style={{ display:'flex', alignItems:'baseline', gap:5 }}>
             <span style={{ fontSize:28, fontWeight:600, color:s.text, lineHeight:1, letterSpacing:'-0.02em' }}>
               {trend.latest.value}
             </span>
-            <span style={{ fontSize:11, color:s.dim }}>{trend.unit}</span>
+            <span style={{ fontSize:11, color:s.muted }}>{trend.unit}</span>
           </div>
           {trend.points.length > 1 ? (
             <div style={{ display:'flex', alignItems:'center', gap:4, marginTop:4 }}>
@@ -181,15 +185,12 @@ function BiomarkerCard({ trend, isSelected, onClick }) {
         </div>
       </div>
 
-      {/* Right: glow chart */}
       <div style={{ display:'flex', alignItems:'center', paddingRight:8, position:'relative' }}>
         <GlowChart points={trend.points} color={color} width={150} height={90} />
       </div>
     </div>
   )
 }
-
-// ─── Dynamics Tab ─────────────────────────────────────────────
 
 function DynamicsTab({ biomarkerRows }) {
   const [selectedKey, setSelectedKey] = useState(null)
@@ -212,7 +213,7 @@ function DynamicsTab({ biomarkerRows }) {
 
   if (trends.length === 0) {
     return (
-      <div style={{ textAlign:'center', padding:'40px 20px', border:`1px dashed ${s.border}`, borderRadius:20 }}>
+      <div style={{ textAlign:'center', padding:'40px 20px', background:'linear-gradient(155deg,rgba(255,255,255,0.05) 0%,rgba(255,255,255,0.01) 100%)', backdropFilter:'blur(40px)', WebkitBackdropFilter:'blur(40px)', border:'1px dashed rgba(255,255,255,0.1)', borderRadius:24 }}>
         <div style={{ fontSize:14, color:s.dim }}>Нет данных для динамики</div>
         <div style={{ fontSize:12, color:s.muted, marginTop:8 }}>Загрузи анализы с несколькими датами</div>
       </div>
@@ -224,7 +225,6 @@ function DynamicsTab({ biomarkerRows }) {
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
 
-      {/* Detail panel for selected biomarker */}
       {selected && (() => {
         const color = getGroupColor(selected.key)
         const pts = selected.points
@@ -240,7 +240,14 @@ function DynamicsTab({ biomarkerRows }) {
         ])
         const path = smoothPath(coords)
         return (
-          <div style={{ background:s.surface, border:`1px solid ${color}44`, borderRadius:20, padding:16, animation:'fadeUp 0.2s forwards' }}>
+          <div style={{
+            background:'linear-gradient(155deg,rgba(255,255,255,0.09) 0%,rgba(255,255,255,0.03) 100%)',
+            backdropFilter:'blur(40px)', WebkitBackdropFilter:'blur(40px)',
+            border:`1px solid ${color}35`,
+            borderRadius:28, padding:20,
+            animation:'fadeUp 0.2s forwards',
+            boxShadow:`0 0 60px ${color}12, 0 20px 60px rgba(0,0,0,0.3)`,
+          }}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:14 }}>
               <div>
                 <div style={{ fontSize:14, fontWeight:500, color:s.text }}>{selected.name}</div>
@@ -266,8 +273,8 @@ function DynamicsTab({ biomarkerRows }) {
                 <path d={path} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
                 {coords.map((c, i) => (
                   <g key={i}>
-                    <circle cx={c[0]} cy={c[1]} r="4.5" fill={pts[i].is_flagged ? s.red : color} />
-                    <text x={c[0]} y={H - 2} textAnchor="middle" fontSize="9" fill={s.dim}>
+                    <circle cx={c[0]} cy={c[1]} r="4.5" fill={pts[i].is_flagged ? s.overload : color} />
+                    <text x={c[0]} y={H - 2} textAnchor="middle" fontSize="9" fill={s.muted}>
                       {new Date(pts[i].date).toLocaleDateString('ru', { month:'short', year:'2-digit' })}
                     </text>
                     <text x={c[0]} y={c[1] - 10} textAnchor="middle" fontSize="9" fill={s.text}>
@@ -281,9 +288,9 @@ function DynamicsTab({ biomarkerRows }) {
             <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
               {[...selected.points].reverse().map((p, i) => {
                 const st = getBiomarkerStatus(p.value, p.ref_min, p.ref_max, p.is_flagged)
-                const sc = st ? STATUS_COLORS[st] : { bg:s.surface2, border:s.border, text:s.dim }
+                const sc = st ? STATUS_COLORS[st] : { bg:'rgba(255,255,255,0.04)', border:'rgba(255,255,255,0.08)', text:s.dim }
                 return (
-                  <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'7px 12px', borderRadius:10, background:sc.bg, border:`1px solid ${sc.border}` }}>
+                  <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'7px 12px', borderRadius:12, background:sc.bg, border:`1px solid ${sc.border}` }}>
                     <span style={{ fontSize:12, color:s.dim }}>
                       {new Date(p.date).toLocaleDateString('ru', { day:'numeric', month:'long', year:'numeric' })}
                     </span>
@@ -299,7 +306,6 @@ function DynamicsTab({ biomarkerRows }) {
         )
       })()}
 
-      {/* Card list */}
       <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
         {trends.map(t => (
           <BiomarkerCard
@@ -314,7 +320,45 @@ function DynamicsTab({ biomarkerRows }) {
   )
 }
 
-// ─── Main component ───────────────────────────────────────────
+function BottomNav({ router }) {
+  const items = [
+    { icon: '🏠', label: 'Главная',   route: '/dashboard' },
+    { icon: '⚡', label: 'Чекин',     route: '/checkin' },
+    { icon: '📊', label: 'Инсайты',   route: '/dashboard/insights' },
+    { icon: '💬', label: 'Ассистент', route: '/assistant' },
+    { icon: '🩺', label: 'Чекапы',    route: '/checkups' },
+  ]
+  const current = typeof window !== 'undefined' ? window.location.pathname : ''
+  return (
+    <nav style={{
+      position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
+      background: 'rgba(8,10,16,0.92)',
+      backdropFilter: 'blur(32px)', WebkitBackdropFilter: 'blur(32px)',
+      border: '1px solid rgba(255,255,255,0.1)',
+      borderRadius: 999,
+      display: 'flex', alignItems: 'center', gap: 2,
+      padding: '8px 10px',
+      zIndex: 50,
+      boxShadow: '0 8px 48px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04)',
+    }}>
+      {items.map(item => {
+        const active = current === item.route
+        return (
+          <button key={item.route} onClick={() => router.push(item.route)} style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+            background: active ? 'rgba(255,255,255,0.1)' : 'transparent',
+            border: active ? '1px solid rgba(255,255,255,0.14)' : '1px solid transparent',
+            borderRadius: 14, cursor: 'pointer', padding: '7px 13px',
+            transition: 'all 0.15s',
+          }}>
+            <span style={{ fontSize: 19 }}>{item.icon}</span>
+            <span style={{ fontSize: 9, color: active ? s.text : s.muted, letterSpacing: '0.02em' }}>{item.label}</span>
+          </button>
+        )
+      })}
+    </nav>
+  )
+}
 
 function CheckupsContent() {
   const router = useRouter()
@@ -422,7 +466,8 @@ function CheckupsContent() {
 
   if (loading) return (
     <div style={{ minHeight:'100vh', background:s.bg, display:'flex', alignItems:'center', justifyContent:'center' }}>
-      <div style={{ fontSize:14, color:s.dim }}>Загружаем...</div>
+      <div style={{ width:28, height:28, borderRadius:'50%', border:'2px solid rgba(255,255,255,0.08)', borderTop:`2px solid ${s.energy}`, animation:'spin 0.8s linear infinite' }} />
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   )
 
@@ -434,30 +479,63 @@ function CheckupsContent() {
   const dateGroups = Object.values(byDate).sort((a, b) => b.date.localeCompare(a.date))
 
   return (
-    <div style={{ minHeight:'100vh', background:s.bg, color:s.text, fontFamily:"'DM Sans',sans-serif", fontWeight:300, paddingBottom:40 }}>
+    <div style={{ minHeight:'100vh', background:s.bg, color:s.text, fontFamily:"'DM Sans',-apple-system,sans-serif", fontWeight:300, paddingBottom:120 }}>
       <style>{`
-        @keyframes fadeUp { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:translateY(0) } }
-        @keyframes spin   { to { transform:rotate(360deg) } }
+        @keyframes fadeUp    { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes spin      { to{transform:rotate(360deg)} }
+        @keyframes orbFloat  { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(12px,-10px) scale(1.08)} }
+        @keyframes orbFloat2 { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(-10px,14px) scale(1.05)} }
       `}</style>
 
-      <header style={{ padding:'14px 20px', borderBottom:`1px solid ${s.border}`, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-        <button onClick={() => router.push('/dashboard')} style={{ fontSize:13, color:s.dim, background:'none', border:'none', cursor:'pointer' }}>← Dashboard</button>
-        <span style={{ fontFamily:"'Playfair Display',serif", fontSize:16, color:s.accent }}>🩺 Чекапы</span>
-        <button onClick={() => router.push('/assistant')} style={{ fontSize:12, color:s.info, background:'rgba(110,168,200,0.08)', border:`1px solid rgba(110,168,200,0.2)`, borderRadius:8, padding:'5px 10px', cursor:'pointer' }}>
-          Обсудить →
-        </button>
-      </header>
+      {/* Hero header */}
+      <div style={{
+        padding:'28px 24px 24px',
+        position:'relative', overflow:'hidden',
+        background:'linear-gradient(145deg,#081628 0%,#060D1C 50%,#0A0F22 100%)',
+        borderBottom:'1px solid rgba(255,255,255,0.07)',
+      }}>
+        <div style={{ position:'absolute', top:-40, right:-30, width:220, height:220, borderRadius:'50%', background:`radial-gradient(circle,${s.mindfulness}20 0%,transparent 65%)`, animation:'orbFloat 9s ease-in-out infinite', pointerEvents:'none' }} />
+        <div style={{ position:'absolute', bottom:-60, left:-40, width:260, height:260, borderRadius:'50%', background:`radial-gradient(circle,${s.energy}12 0%,transparent 65%)`, animation:'orbFloat2 12s ease-in-out infinite 1.5s', pointerEvents:'none' }} />
+
+        <div style={{ position:'relative', zIndex:1, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+          <button onClick={() => router.push('/dashboard')} style={{ fontSize:13, color:s.dim, background:'none', border:'none', cursor:'pointer', padding:0 }}>← Назад</button>
+          <div style={{ textAlign:'center' }}>
+            <div style={{ fontFamily:"'Playfair Display',serif", fontSize:17, color:s.text }}>🩺 Чекапы</div>
+          </div>
+          <button onClick={() => router.push('/assistant')} style={{
+            fontSize:12, color:s.energy,
+            background:'rgba(106,168,255,0.08)', border:'1px solid rgba(106,168,255,0.2)',
+            borderRadius:12, padding:'5px 10px', cursor:'pointer',
+          }}>
+            Обсудить →
+          </button>
+        </div>
+      </div>
 
       <div style={{ maxWidth:560, margin:'0 auto', padding:'16px 16px' }}>
 
         {/* Upload block */}
-        <div style={{ background:s.surface, border:`1px solid ${s.border}`, borderRadius:20, padding:'16px', marginBottom:16 }}>
+        <div style={{
+          background:'linear-gradient(155deg,rgba(255,255,255,0.075) 0%,rgba(255,255,255,0.025) 100%)',
+          backdropFilter:'blur(40px)', WebkitBackdropFilter:'blur(40px)',
+          border:'1px solid rgba(255,255,255,0.09)',
+          borderRadius:28, padding:16, marginBottom:16,
+          boxShadow:'0 4px 30px rgba(0,0,0,0.2)',
+        }}>
           <input ref={fileInputRef} type="file" accept="image/*,.pdf,application/pdf" style={{ display:'none' }}
             onChange={e => e.target.files?.[0] && handleUpload(e.target.files[0])} />
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            style={{ width:'100%', padding:'12px', borderRadius:12, background: uploading ? s.surface2 : 'rgba(110,168,200,0.08)', border:`1px solid ${uploading ? s.border : 'rgba(110,168,200,0.22)'}`, color: uploading ? s.muted : '#6ea8c8', fontSize:13, cursor: uploading ? 'not-allowed' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8, transition:'all 0.2s' }}
+            style={{
+              width:'100%', padding:'12px', borderRadius:16,
+              background: uploading ? 'rgba(255,255,255,0.03)' : `rgba(106,168,255,0.08)`,
+              border: `1px solid ${uploading ? 'rgba(255,255,255,0.06)' : 'rgba(106,168,255,0.25)'}`,
+              color: uploading ? s.muted : s.energy,
+              fontSize:13, cursor: uploading ? 'not-allowed' : 'pointer',
+              display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+              transition:'all 0.2s', fontFamily:"'DM Sans',sans-serif",
+            }}
           >
             {uploading
               ? <><span style={{ animation:'spin 1s linear infinite', display:'inline-block' }}>◌</span> Распознаю показатели...</>
@@ -465,7 +543,7 @@ function CheckupsContent() {
             }
           </button>
           {uploadResult && (
-            <div style={{ marginTop:10, padding:'10px 12px', borderRadius:10, background: uploadResult.success ? 'rgba(122,184,122,0.08)' : 'rgba(224,112,112,0.08)', border:`1px solid ${uploadResult.success ? 'rgba(122,184,122,0.25)' : 'rgba(224,112,112,0.2)'}`, fontSize:12, color: uploadResult.success ? s.green : s.red, lineHeight:1.6 }}>
+            <div style={{ marginTop:10, padding:'10px 14px', borderRadius:14, background: uploadResult.success ? 'rgba(82,255,154,0.08)' : 'rgba(255,90,90,0.08)', border:`1px solid ${uploadResult.success ? 'rgba(82,255,154,0.22)' : 'rgba(255,90,90,0.2)'}`, fontSize:12, color: uploadResult.success ? s.recovery : s.overload, lineHeight:1.6 }}>
               {uploadResult.success
                 ? `✓ Сохранено ${uploadResult.dates} ${uploadResult.dates === 1 ? 'запись' : 'записей'}, ${uploadResult.count} показателей. Даты: ${uploadResult.savedDates}. `
                 : ''
@@ -480,62 +558,64 @@ function CheckupsContent() {
         </div>
 
         {/* Tabs */}
-        <div style={{ display:'flex', gap:4, marginBottom:16, background:s.surface, borderRadius:14, padding:4, border:`1px solid ${s.border}` }}>
+        <div style={{ display:'flex', gap:4, marginBottom:16, background:'rgba(255,255,255,0.04)', backdropFilter:'blur(20px)', WebkitBackdropFilter:'blur(20px)', borderRadius:18, padding:4, border:'1px solid rgba(255,255,255,0.08)' }}>
           {[['dynamics','📈 Динамика'],['history','📋 История']].map(([t, l]) => (
-            <div key={t} onClick={() => setTab(t)} style={{ flex:1, padding:'9px', borderRadius:10, fontSize:13, textAlign:'center', cursor:'pointer', background:tab===t ? s.surface2 : 'transparent', color:tab===t ? s.text : s.dim, fontWeight:tab===t ? 500 : 300, transition:'all 0.15s' }}>
+            <div key={t} onClick={() => setTab(t)} style={{ flex:1, padding:'10px', borderRadius:14, fontSize:13, textAlign:'center', cursor:'pointer', background:tab===t ? 'rgba(255,255,255,0.09)' : 'transparent', color:tab===t ? s.text : s.muted, fontWeight:tab===t ? 500 : 300, transition:'all 0.15s', border: tab===t ? '1px solid rgba(255,255,255,0.1)' : '1px solid transparent' }}>
               {l}
             </div>
           ))}
         </div>
 
-        {/* ── Dynamics ── */}
+        {/* Dynamics tab */}
         {tab === 'dynamics' && (
           <div style={{ animation:'fadeUp 0.3s forwards' }}>
             <DynamicsTab biomarkerRows={biomarkerRows} />
           </div>
         )}
 
-        {/* ── History ── */}
+        {/* History tab */}
         {tab === 'history' && (
           <div style={{ display:'flex', flexDirection:'column', gap:10, animation:'fadeUp 0.3s forwards' }}>
             {dateGroups.length === 0 ? (
-              <div style={{ textAlign:'center', padding:'40px 20px', border:`1px dashed ${s.border}`, borderRadius:20 }}>
+              <div style={{ textAlign:'center', padding:'40px 20px', background:'linear-gradient(155deg,rgba(255,255,255,0.05) 0%,rgba(255,255,255,0.01) 100%)', backdropFilter:'blur(40px)', WebkitBackdropFilter:'blur(40px)', border:'1px dashed rgba(255,255,255,0.1)', borderRadius:24 }}>
                 <div style={{ fontSize:14, color:s.dim }}>Загрузи анализы чтобы увидеть историю</div>
               </div>
             ) : dateGroups.map((group, i) => {
               const flagged = group.items.filter(b => b.is_flagged)
               const normal  = group.items.filter(b => !b.is_flagged)
               return (
-                <div key={i} style={{ background:s.surface, border:`1px solid ${s.border}`, borderRadius:20, padding:'16px 18px' }}>
-                  {/* Date header */}
+                <div key={i} style={{
+                  background:'linear-gradient(155deg,rgba(255,255,255,0.07) 0%,rgba(255,255,255,0.02) 100%)',
+                  backdropFilter:'blur(40px)', WebkitBackdropFilter:'blur(40px)',
+                  border:'1px solid rgba(255,255,255,0.08)',
+                  borderRadius:24, padding:'16px 18px',
+                  boxShadow:'0 4px 24px rgba(0,0,0,0.2)',
+                }}>
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
                     <div style={{ fontSize:14, fontWeight:500, color:s.text }}>
                       {new Date(group.date).toLocaleDateString('ru', { day:'numeric', month:'long', year:'numeric' })}
                     </div>
                     <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                       {flagged.length > 0 && (
-                        <span style={{ fontSize:11, color:s.red, background:'rgba(224,112,112,0.1)', border:'1px solid rgba(224,112,112,0.2)', borderRadius:8, padding:'3px 9px' }}>
+                        <span style={{ fontSize:11, color:s.overload, background:'rgba(255,90,90,0.10)', border:'1px solid rgba(255,90,90,0.22)', borderRadius:10, padding:'3px 9px' }}>
                           ⚠ {flagged.length} вне нормы
                         </span>
                       )}
-                      {group.lab_name && <span style={{ fontSize:11, color:s.dim }}>{group.lab_name}</span>}
+                      {group.lab_name && <span style={{ fontSize:11, color:s.muted }}>{group.lab_name}</span>}
                     </div>
                   </div>
 
-                  {/* Biomarker pills — same size, green/red */}
                   <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
                     {[...flagged, ...normal].map((b, j) => {
                       const flaggedPill = b.is_flagged
                       return (
                         <div key={j} style={{
-                          padding:'5px 11px',
-                          borderRadius:10,
-                          background: flaggedPill ? 'rgba(224,112,112,0.12)' : 'rgba(122,184,122,0.1)',
-                          border:`1px solid ${flaggedPill ? 'rgba(224,112,112,0.3)' : 'rgba(122,184,122,0.25)'}`,
+                          padding:'5px 11px', borderRadius:12,
+                          background: flaggedPill ? 'rgba(255,90,90,0.10)' : 'rgba(82,255,154,0.08)',
+                          border:`1px solid ${flaggedPill ? 'rgba(255,90,90,0.28)' : 'rgba(82,255,154,0.22)'}`,
                           fontSize:11,
-                          color: flaggedPill ? s.red : s.green,
-                          whiteSpace:'nowrap',
-                          lineHeight:1.4,
+                          color: flaggedPill ? s.overload : s.recovery,
+                          whiteSpace:'nowrap', lineHeight:1.4,
                         }}>
                           <span style={{ opacity:0.75 }}>{b.name || keyToName(b.key)}</span>
                           {' '}
@@ -553,6 +633,8 @@ function CheckupsContent() {
         )}
 
       </div>
+
+      <BottomNav router={router} />
     </div>
   )
 }
