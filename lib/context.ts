@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { createClient } from '@supabase/supabase-js'
+import { analyzeActivity, ActivityAnalysis } from './activity-analysis'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -38,6 +39,7 @@ export interface UserContext {
   biomarker_trends: BiomarkerTrend[]
   active_recommendations: any[]
   health_trends: HealthTrends
+  activity_analysis: ActivityAnalysis
 }
 
 // ─── Оценка статуса биомаркера ────────────────────────────────
@@ -238,7 +240,7 @@ export async function getUserContext(userId: string): Promise<UserContext> {
     // Данные с носимых устройств — последние 30 дней
     supabaseAdmin
       .from('daily_logs')
-      .select('user_id, date, sleep_hours, hrv, steps, resting_heart_rate, workout_minutes, workout_type')
+      .select('user_id, date, sleep_hours, hrv, steps, resting_heart_rate, workout_minutes, workout_type, vo2max')
       .eq('user_id', userId)
       .gte('date', thirtyDaysAgoStr)
       .order('date', { ascending: false }),
@@ -271,6 +273,8 @@ export async function getUserContext(userId: string): Promise<UserContext> {
     })
   }
 
+  const dailyLogs = dailyLogsRes.data || []
+
   return {
     state_map: sessionRes.data?.state_map || null,
     active_sprints: sprintsRes.data || [],
@@ -279,7 +283,8 @@ export async function getUserContext(userId: string): Promise<UserContext> {
     latest_biomarkers: latestBiomarkers,
     biomarker_trends: biomarkerTrends,
     active_recommendations: recommendationsRes.data || [],
-    health_trends: calcHealthTrends(dailyLogsRes.data || []),
+    health_trends: calcHealthTrends(dailyLogs),
+    activity_analysis: analyzeActivity(dailyLogs),
   }
 }
 
@@ -340,6 +345,24 @@ export function formatContextForPrompt(ctx: UserContext): string {
       `- [${r.priority}] ${r.title}`
     )
     parts.push(`## Активные рекомендации\n${recLines.join('\n')}`)
+  }
+
+  const aa = ctx.activity_analysis
+  const hasActivityData = aa.weekly.total_workout_minutes > 0 || aa.weekly.avg_steps > 0
+  if (hasActivityData || aa.gaps.length > 0) {
+    const w = aa.weekly
+    const lines: string[] = [
+      `- Силовые: ${w.strength_sessions}/нед, Кардио: ${w.cardio_sessions}/нед, Мобильность: ${w.mobility_sessions}/нед, HIIT: ${w.hiit_sessions}/нед`,
+      `- Zone 2 (оценка): ${w.zone2_minutes} мин/нед, Всего активности: ${w.total_workout_minutes} мин`,
+      w.avg_steps > 0 ? `- Шаги: среднее ${w.avg_steps.toLocaleString()}/день` : null,
+      aa.vo2max.latest != null ? `- VO2max: ${aa.vo2max.latest.toFixed(1)} (тренд: ${aa.vo2max.trend})` : null,
+    ].filter(Boolean)
+
+    if (aa.gaps.length > 0) {
+      lines.push('- Слабые зоны: ' + aa.gaps.map(g => `[${g.severity}] ${g.message}`).join(' | '))
+    }
+
+    parts.push(`## Анализ активности\n${lines.join('\n')}`)
   }
 
   const ht = ctx.health_trends
