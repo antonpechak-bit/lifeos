@@ -5,16 +5,77 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { VoiceButton } from '@/lib/VoiceButton'
 
+// ── Design tokens ──────────────────────────────────────────────
+const s = {
+  bg:     '#07090D',
+  text:   '#F2F0EA',
+  dim:    'rgba(255,255,255,0.50)',
+  muted:  'rgba(255,255,255,0.28)',
+  faint:  'rgba(255,255,255,0.07)',
+  energy:     '#6AA8FF',
+  mood:       '#B18DFF',
+  meaning:    '#52FF9A',
+  connection: '#FFB84D',
+  error:      '#FF5A5A',
+}
+
 const LAYER_COLORS = {
-  sleep: '#6ea8c8', ans: '#a86ec8', movement: '#c8a86e',
-  nutrition: '#7ab87a', connection: '#c86e6e', attention: '#6ec8a8', values: '#c8c86e'
+  sleep:      '#6AA8FF',
+  ans:        '#B18DFF',
+  movement:   '#FFB84D',
+  nutrition:  '#52FF9A',
+  connection: '#FFB84D',
+  attention:  '#52FF9A',
+  values:     '#B18DFF',
 }
 
 const LAYER_LABELS = {
   sleep: 'Сон', ans: 'Нервная система', movement: 'Движение',
-  nutrition: 'Питание', connection: 'Связь', attention: 'Внимание', values: 'Ценности'
+  nutrition: 'Питание', connection: 'Связь', attention: 'Внимание', values: 'Ценности',
 }
 
+// ── Bottom Nav ─────────────────────────────────────────────────
+function BottomNav({ router }) {
+  const items = [
+    { icon: '🏠', label: 'Главная',   route: '/dashboard' },
+    { icon: '⚡', label: 'Чекин',     route: '/checkin' },
+    { icon: '📊', label: 'Инсайты',   route: '/dashboard/insights' },
+    { icon: '💬', label: 'Ассистент', route: '/assistant' },
+    { icon: '🩺', label: 'Чекапы',    route: '/checkups' },
+  ]
+  const current = typeof window !== 'undefined' ? window.location.pathname : ''
+  return (
+    <nav style={{
+      position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
+      background: 'rgba(8,10,16,0.92)',
+      backdropFilter: 'blur(32px)', WebkitBackdropFilter: 'blur(32px)',
+      border: '1px solid rgba(255,255,255,0.1)',
+      borderRadius: 999,
+      display: 'flex', alignItems: 'center', gap: 2,
+      padding: '8px 10px',
+      zIndex: 50,
+      boxShadow: '0 8px 48px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04)',
+    }}>
+      {items.map(item => {
+        const active = current === item.route
+        return (
+          <button key={item.route} onClick={() => router.push(item.route)} style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+            background: active ? 'rgba(255,255,255,0.1)' : 'transparent',
+            border: active ? '1px solid rgba(255,255,255,0.14)' : '1px solid transparent',
+            borderRadius: 14, cursor: 'pointer', padding: '7px 13px',
+            transition: 'all 0.15s',
+          }}>
+            <span style={{ fontSize: 19 }}>{item.icon}</span>
+            <span style={{ fontSize: 9, color: active ? s.text : s.muted, letterSpacing: '0.02em' }}>{item.label}</span>
+          </button>
+        )
+      })}
+    </nav>
+  )
+}
+
+// ── State map parser (unchanged) ───────────────────────────────
 function parseStateMap(raw) {
   if (!raw) return { overview: '', working: [], attention: [], priorities: [], nextStep: '' }
   const lines = raw.split('\n').map(l => l.trim()).filter(Boolean)
@@ -45,6 +106,19 @@ function parseStateMap(raw) {
   return result
 }
 
+function guessLayer(name) {
+  const n = name.toLowerCase()
+  if (n.includes('сон') || n.includes('sleep')) return 'sleep'
+  if (n.includes('нервн') || n.includes('внс') || n.includes('стресс') || n.includes('дыхан')) return 'ans'
+  if (n.includes('движ') || n.includes('зона') || n.includes('zone') || n.includes('спорт')) return 'movement'
+  if (n.includes('питан') || n.includes('еда')) return 'nutrition'
+  if (n.includes('связ') || n.includes('отношен')) return 'connection'
+  if (n.includes('вниман')) return 'attention'
+  if (n.includes('ценност') || n.includes('смысл')) return 'values'
+  return 'sleep'
+}
+
+// ── Main content ───────────────────────────────────────────────
 function PrioritiesContent() {
   const router = useRouter()
   const params = useSearchParams()
@@ -57,14 +131,12 @@ function PrioritiesContent() {
   const [activePri, setActivePri] = useState(null)
   const [sprints, setSprints] = useState([])
 
-  // Chat state
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
   const [sprintSaved, setSprintSaved] = useState(false)
   const messagesEndRef = useRef(null)
   const taRef = useRef(null)
-
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }) => {
@@ -93,23 +165,9 @@ function PrioritiesContent() {
     setMessages([])
     setSprintSaved(false)
 
-    // Opening message
     const layerKey = guessLayer(pri.name)
     const opening = `Хорошо, давай разберём «${pri.name}» подробнее.\n\n${pri.why}\n\nЧтобы предложить тебе подходящий шаг — пару вопросов:\n\nЧто сейчас происходит с ${LAYER_LABELS[layerKey] || pri.name.toLowerCase()}? Как это выглядит в твоей реальной жизни прямо сейчас?`
-
     setMessages([{ role: 'assistant', content: opening }])
-  }
-
-  function guessLayer(name) {
-    const n = name.toLowerCase()
-    if (n.includes('сон') || n.includes('sleep')) return 'sleep'
-    if (n.includes('нервн') || n.includes('внс') || n.includes('стресс') || n.includes('дыхан')) return 'ans'
-    if (n.includes('движ') || n.includes('зона') || n.includes('zone') || n.includes('спорт')) return 'movement'
-    if (n.includes('питан') || n.includes('еда')) return 'nutrition'
-    if (n.includes('связ') || n.includes('отношен')) return 'connection'
-    if (n.includes('вниман')) return 'attention'
-    if (n.includes('ценност') || n.includes('смысл')) return 'values'
-    return 'sleep'
   }
 
   async function sendMessage() {
@@ -159,67 +217,111 @@ function PrioritiesContent() {
   }
 
   if (loading) return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ fontSize: 14, color: 'var(--text-dim,#7a7870)' }}>Загружаем...</div>
+    <div style={{ minHeight: '100vh', background: s.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ width: 28, height: 28, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.08)', borderTop: `2px solid ${s.energy}`, animation: 'spin 0.8s linear infinite' }} />
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   )
 
-  const activeSprints = sprints.filter(s => s.status === 'active')
+  const activeSprints = sprints.filter(sp => sp.status === 'active')
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
+    <div style={{ minHeight: '100vh', background: s.bg, color: s.text, fontFamily: "'DM Sans',-apple-system,sans-serif", fontWeight: 300, display: 'flex', flexDirection: 'column' }}>
+      <style>{`
+        @keyframes fadeUp  { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes fadeIn  { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes spin    { to{transform:rotate(360deg)} }
+        @keyframes orbFloat{ 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(10px,-8px) scale(1.06)} }
+        @keyframes td      { 0%,60%,100%{transform:translateY(0);opacity:0.4} 30%{transform:translateY(-4px);opacity:1} }
+      `}</style>
 
       {/* Header */}
-      <header style={{ padding: '14px 24px', borderBottom: '1px solid var(--border,rgba(255,255,255,0.07))', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <button onClick={() => router.push('/dashboard')} style={{ fontSize: 13, color: 'var(--text-dim,#7a7870)', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-            ← Dashboard
-          </button>
-          <span style={{ fontSize: 11, color: 'var(--text-muted,#3d3d3d)' }}>|</span>
-          <span style={{ fontFamily: "'Playfair Display',serif", fontSize: 16, color: 'var(--accent,#c8b89a)' }}>Карта приоритетов</span>
+      <header style={{
+        padding: '22px 24px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        flexShrink: 0, animation: 'fadeUp 0.4s ease forwards',
+        borderBottom: '1px solid rgba(255,255,255,0.06)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <button onClick={() => router.push('/dashboard')} style={{ fontSize: 13, color: s.muted, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>←</button>
+          <span style={{ fontFamily: "'Playfair Display',serif", fontSize: 18, color: s.text, opacity: 0.9 }}>Карта приоритетов</span>
         </div>
-        <div style={{ fontSize: 12, color: 'var(--text-dim,#7a7870)' }}>
-          {new Date(session?.created_at).toLocaleDateString('ru', { day: 'numeric', month: 'long' })}
-        </div>
+        {session?.created_at && (
+          <div style={{ fontSize: 12, color: s.muted }}>
+            {new Date(session.created_at).toLocaleDateString('ru', { day: 'numeric', month: 'long' })}
+          </div>
+        )}
       </header>
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
 
-        {/* Left panel */}
-        <div style={{ width: activePri ? '380px' : '100%', flexShrink: 0, borderRight: activePri ? '1px solid var(--border,rgba(255,255,255,0.07))' : 'none', overflowY: 'auto', padding: '24px', transition: 'width 0.3s' }}>
+        {/* ── Left panel ── */}
+        <div style={{
+          width: activePri ? 380 : '100%', flexShrink: 0,
+          borderRight: activePri ? '1px solid rgba(255,255,255,0.07)' : 'none',
+          overflowY: 'auto', padding: activePri ? '20px 18px 120px' : '20px 18px 120px',
+          transition: 'width 0.3s',
+          maxWidth: activePri ? 380 : 600, margin: activePri ? 0 : '0 auto',
+        }}>
 
-          {/* Overview */}
+          {/* Overview card */}
           {parsed?.overview && (
-            <div style={{ background: 'var(--surface,#141416)', border: '1px solid rgba(200,184,154,0.15)', borderRadius: 14, padding: '16px 18px', marginBottom: 20 }}>
-              <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-dim,#7a7870)', marginBottom: 8 }}>Общая картина</div>
-              <div style={{ fontSize: 13, color: 'var(--text,#e8e6e0)', lineHeight: 1.75 }}>{parsed.overview}</div>
+            <div style={{
+              background: 'linear-gradient(155deg,rgba(177,141,255,0.08) 0%,rgba(255,255,255,0.02) 100%)',
+              backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
+              border: '1px solid rgba(177,141,255,0.15)', borderRadius: 28,
+              padding: '20px 20px', marginBottom: 18,
+              position: 'relative', overflow: 'hidden',
+              boxShadow: '0 0 60px rgba(177,141,255,0.06)',
+              animation: 'fadeUp 0.45s ease forwards',
+            }}>
+              <div style={{ position: 'absolute', top: -30, right: -30, width: 130, height: 130, borderRadius: '50%', background: 'radial-gradient(circle,rgba(177,141,255,0.15) 0%,transparent 65%)', animation: 'orbFloat 8s ease-in-out infinite', pointerEvents: 'none' }} />
+              <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', color: s.muted, marginBottom: 10, position: 'relative' }}>Общая картина</div>
+              <div style={{ fontSize: 13, color: s.dim, lineHeight: 1.75, position: 'relative' }}>{parsed.overview}</div>
             </div>
           )}
 
-          {/* Priorities */}
-          <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted,#3d3d3d)', marginBottom: 12 }}>Три приоритета</div>
+          {/* Section label */}
+          <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', color: s.muted, marginBottom: 12, paddingLeft: 4 }}>Три приоритета</div>
 
+          {/* Priority cards */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
             {parsed?.priorities?.map((pri, idx) => {
               const layerKey = guessLayer(pri.name)
-              const color = LAYER_COLORS[layerKey] || '#888'
+              const color = LAYER_COLORS[layerKey] || s.energy
               const isActive = activePri?.n === pri.n
-              const hasSprint = sprints.some(s => s.layer === layerKey && s.status === 'active')
+              const hasSprint = sprints.some(sp => sp.layer === layerKey && sp.status === 'active')
 
               return (
                 <div key={idx}
                   onClick={() => selectPriority(pri, idx)}
-                  style={{ background: isActive ? 'var(--surface2,#1a1a1e)' : 'var(--surface,#141416)', border: isActive ? `2px solid ${color}` : '1px solid var(--border,rgba(255,255,255,0.07))', borderRadius: 14, padding: '14px 16px', cursor: 'pointer', transition: 'all 0.2s', animation: 'fadeIn 0.3s forwards' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    <div style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 }} />
-                    <div style={{ fontSize: 10, color: 'var(--text-dim,#7a7870)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Приоритет {pri.n}</div>
-                    {hasSprint && <div style={{ marginLeft: 'auto', fontSize: 10, padding: '2px 8px', borderRadius: 6, background: 'rgba(122,184,122,0.15)', color: '#7ab87a' }}>Спринт активен</div>}
+                  style={{
+                    background: isActive
+                      ? `linear-gradient(155deg,${color}12 0%,rgba(255,255,255,0.03) 100%)`
+                      : 'linear-gradient(155deg,rgba(255,255,255,0.065) 0%,rgba(255,255,255,0.02) 100%)',
+                    backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
+                    border: isActive ? `1px solid ${color}35` : '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: 24, padding: '18px 18px',
+                    cursor: 'pointer', transition: 'all 0.2s',
+                    animation: 'fadeIn 0.35s forwards',
+                    boxShadow: isActive ? `0 0 40px ${color}12` : '0 4px 20px rgba(0,0,0,0.2)',
+                    position: 'relative', overflow: 'hidden',
+                  }}>
+                  {isActive && (
+                    <div style={{ position: 'absolute', bottom: -20, right: -20, width: 100, height: 100, borderRadius: '50%', background: `radial-gradient(circle,${color}18 0%,transparent 65%)`, pointerEvents: 'none' }} />
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, position: 'relative' }}>
+                    <div style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0, boxShadow: `0 0 8px ${color}80` }} />
+                    <div style={{ fontSize: 10, color: color, opacity: 0.8, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Приоритет {pri.n}</div>
+                    {hasSprint && (
+                      <div style={{ marginLeft: 'auto', fontSize: 10, padding: '3px 10px', borderRadius: 999, background: `${s.meaning}15`, color: s.meaning, border: `1px solid ${s.meaning}28` }}>
+                        ✓ Спринт активен
+                      </div>
+                    )}
                   </div>
-                  <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text,#e8e6e0)', marginBottom: 6 }}>{pri.name}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-dim,#7a7870)', lineHeight: 1.6, marginBottom: hasSprint ? 0 : 8 }}>{pri.why}</div>
-                  {!hasSprint && (
-                    <div style={{ fontSize: 12, color: color, display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: s.text, marginBottom: 7, position: 'relative' }}>{pri.name}</div>
+                  <div style={{ fontSize: 12, color: s.dim, lineHeight: 1.65, marginBottom: hasSprint ? 0 : 10, position: 'relative' }}>{pri.why}</div>
+                  {!hasSprint && pri.step && (
+                    <div style={{ fontSize: 12, color: color, display: 'flex', alignItems: 'center', gap: 5, position: 'relative' }}>
                       → {pri.step}
                     </div>
                   )}
@@ -231,15 +333,21 @@ function PrioritiesContent() {
           {/* Active sprints */}
           {activeSprints.length > 0 && (
             <>
-              <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted,#3d3d3d)', marginBottom: 12 }}>Активные спринты</div>
+              <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', color: s.muted, marginBottom: 12, paddingLeft: 4 }}>Активные спринты</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {activeSprints.map(sprint => (
-                  <div key={sprint.id} style={{ background: 'var(--surface,#141416)', border: '1px solid var(--border,rgba(255,255,255,0.07))', borderRadius: 12, padding: '12px 14px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text,#e8e6e0)' }}>{sprint.behavior_name}</div>
-                      <div style={{ fontSize: 10, padding: '2px 8px', borderRadius: 6, background: 'rgba(110,168,200,0.15)', color: '#6ea8c8' }}>{LAYER_LABELS[sprint.layer] || sprint.layer}</div>
+                  <div key={sprint.id} style={{
+                    background: 'linear-gradient(155deg,rgba(82,255,154,0.07) 0%,rgba(255,255,255,0.02) 100%)',
+                    backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
+                    border: `1px solid ${s.meaning}20`, borderRadius: 20, padding: '14px 16px',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: s.text }}>{sprint.behavior_name}</div>
+                      <div style={{ fontSize: 10, padding: '3px 10px', borderRadius: 999, background: `${s.energy}12`, color: s.energy, border: `1px solid ${s.energy}22` }}>
+                        {LAYER_LABELS[sprint.layer] || sprint.layer}
+                      </div>
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--text-dim,#7a7870)' }}>⚓ {sprint.anchor}</div>
+                    <div style={{ fontSize: 11, color: s.muted }}>⚓ {sprint.anchor}</div>
                   </div>
                 ))}
               </div>
@@ -247,46 +355,76 @@ function PrioritiesContent() {
           )}
         </div>
 
-        {/* Right panel — chat */}
+        {/* ── Right panel — chat ── */}
         {activePri && (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', animation: 'fadeIn 0.3s forwards' }}>
 
             {/* Chat header */}
-            <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border,rgba(255,255,255,0.07))', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+            <div style={{
+              padding: '16px 22px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0,
+              borderBottom: '1px solid rgba(255,255,255,0.07)',
+              background: 'rgba(255,255,255,0.02)',
+            }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ width: 8, height: 8, borderRadius: '50%', background: LAYER_COLORS[guessLayer(activePri.name)] || '#888' }} />
-                <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text,#e8e6e0)' }}>{activePri.name}</span>
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: LAYER_COLORS[guessLayer(activePri.name)] || s.energy, boxShadow: `0 0 8px ${LAYER_COLORS[guessLayer(activePri.name)] || s.energy}80` }} />
+                <span style={{ fontSize: 14, fontWeight: 500, color: s.text }}>{activePri.name}</span>
               </div>
-              <button onClick={() => setActivePri(null)} style={{ fontSize: 18, color: 'var(--text-dim,#7a7870)', background: 'none', border: 'none', cursor: 'pointer', lineHeight: 1 }}>×</button>
+              <button onClick={() => setActivePri(null)} style={{ fontSize: 20, color: s.muted, background: 'none', border: 'none', cursor: 'pointer', lineHeight: 1, padding: '0 4px' }}>×</button>
             </div>
 
             {/* Messages */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '20px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
               {messages.map((msg, i) => {
                 const hasSprint = msg.role === 'assistant' && msg.content.includes('[SPRINT_START]')
                 const text = hasSprint ? msg.content.split('[SPRINT_START]')[0].trim() : msg.content
                 const sprintRaw = hasSprint ? msg.content.split('[SPRINT_START]')[1]?.split('[SPRINT_END]')[0]?.trim() : ''
-
                 const getField = (key) => sprintRaw?.split('\n').find(l => l.startsWith(key + ':'))?.slice(key.length + 1).trim() || ''
 
                 return (
                   <div key={i} style={{ display: 'flex', gap: 10, flexDirection: msg.role === 'user' ? 'row-reverse' : 'row', animation: 'fadeIn 0.25s forwards', opacity: 0 }}>
-                    <div style={{ width: 28, height: 28, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 500, marginTop: 2, background: msg.role === 'assistant' ? 'var(--surface2,#1a1a1e)' : 'rgba(110,168,200,0.15)', border: `1px solid ${msg.role === 'assistant' ? 'rgba(255,255,255,0.07)' : 'rgba(110,168,200,0.25)'}`, color: msg.role === 'assistant' ? 'var(--text-dim,#7a7870)' : '#6ea8c8' }}>
+                    <div style={{
+                      width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 11, fontWeight: 500, marginTop: 2,
+                      background: msg.role === 'assistant' ? 'rgba(255,255,255,0.06)' : `${s.energy}18`,
+                      border: `1px solid ${msg.role === 'assistant' ? 'rgba(255,255,255,0.1)' : `${s.energy}30`}`,
+                      color: msg.role === 'assistant' ? s.muted : s.energy,
+                    }}>
                       {msg.role === 'assistant' ? 'L' : 'Я'}
                     </div>
                     <div style={{ maxWidth: 480 }}>
                       {text && (
-                        <div style={{ padding: '10px 14px', borderRadius: msg.role === 'assistant' ? '4px 12px 12px 12px' : '12px 4px 12px 12px', background: msg.role === 'assistant' ? 'var(--surface,#141416)' : 'rgba(110,168,200,0.12)', border: `1px solid ${msg.role === 'assistant' ? 'rgba(255,255,255,0.07)' : 'rgba(110,168,200,0.2)'}`, fontSize: 13, lineHeight: 1.75, whiteSpace: 'pre-wrap', color: msg.role === 'assistant' ? 'var(--text,#e8e6e0)' : '#6ea8c8', textAlign: msg.role === 'user' ? 'right' : 'left' }}>
+                        <div style={{
+                          padding: '11px 15px',
+                          borderRadius: msg.role === 'assistant' ? '4px 16px 16px 16px' : '16px 4px 16px 16px',
+                          background: msg.role === 'assistant'
+                            ? 'linear-gradient(155deg,rgba(255,255,255,0.07) 0%,rgba(255,255,255,0.025) 100%)'
+                            : `${s.energy}12`,
+                          border: `1px solid ${msg.role === 'assistant' ? 'rgba(255,255,255,0.09)' : `${s.energy}25`}`,
+                          backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+                          fontSize: 13, lineHeight: 1.75, whiteSpace: 'pre-wrap',
+                          color: msg.role === 'assistant' ? s.text : s.energy,
+                          textAlign: msg.role === 'user' ? 'right' : 'left',
+                        }}>
                           {text}
                         </div>
                       )}
                       {hasSprint && sprintRaw && (
-                        <div style={{ marginTop: 10, background: 'rgba(122,184,122,0.08)', border: '1px solid rgba(122,184,122,0.25)', borderRadius: 12, padding: '14px 16px' }}>
-                          <div style={{ fontSize: 11, color: '#7ab87a', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 10 }}>✓ Спринт записан</div>
-                          <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text,#e8e6e0)', marginBottom: 6 }}>{getField('NAME')}</div>
-                          <div style={{ fontSize: 12, color: 'var(--text-dim,#7a7870)', marginBottom: 4 }}>{getField('DESCRIPTION')}</div>
-                          <div style={{ fontSize: 11, color: 'var(--text-muted,#3d3d3d)' }}>⚓ {getField('ANCHOR')} · {getField('DAYS')} дней</div>
-                          <button onClick={() => router.push('/dashboard')} style={{ marginTop: 12, width: '100%', padding: '8px', borderRadius: 8, background: '#7ab87a', color: '#0d0d0f', border: 'none', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
+                        <div style={{
+                          marginTop: 10,
+                          background: `${s.meaning}0D`, border: `1px solid ${s.meaning}30`,
+                          borderRadius: 18, padding: '16px 18px',
+                        }}>
+                          <div style={{ fontSize: 11, color: s.meaning, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 10 }}>✓ Спринт записан</div>
+                          <div style={{ fontSize: 14, fontWeight: 500, color: s.text, marginBottom: 6 }}>{getField('NAME')}</div>
+                          <div style={{ fontSize: 12, color: s.dim, marginBottom: 4 }}>{getField('DESCRIPTION')}</div>
+                          <div style={{ fontSize: 11, color: s.muted }}>⚓ {getField('ANCHOR')} · {getField('DAYS')} дней</div>
+                          <button onClick={() => router.push('/dashboard')} style={{
+                            marginTop: 14, width: '100%', padding: '10px', borderRadius: 12,
+                            background: `linear-gradient(135deg,${s.meaning},${s.energy})`,
+                            color: '#07090D', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                            boxShadow: `0 0 24px ${s.meaning}40`,
+                          }}>
                             Перейти к чекинам →
                           </button>
                         </div>
@@ -298,19 +436,35 @@ function PrioritiesContent() {
 
               {chatLoading && (
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--surface2,#1a1a1e)', border: '1px solid rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'var(--text-dim,#7a7870)' }}>L</div>
-                  <div style={{ background: 'var(--surface,#141416)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '4px 12px 12px 12px', padding: '10px 14px', display: 'flex', gap: 4 }}>
-                    {[0, 1, 2].map(i => <div key={i} style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--text-dim,#7a7870)', animation: `td 1.3s infinite ${i * 0.15}s` }} />)}
+                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: s.muted }}>L</div>
+                  <div style={{
+                    background: 'linear-gradient(155deg,rgba(255,255,255,0.07) 0%,rgba(255,255,255,0.025) 100%)',
+                    border: '1px solid rgba(255,255,255,0.09)',
+                    borderRadius: '4px 16px 16px 16px', padding: '11px 15px',
+                    display: 'flex', gap: 5,
+                  }}>
+                    {[0, 1, 2].map(i => (
+                      <div key={i} style={{ width: 5, height: 5, borderRadius: '50%', background: s.muted, animation: `td 1.3s infinite ${i * 0.15}s` }} />
+                    ))}
                   </div>
-                  <style>{`@keyframes td{0%,60%,100%{transform:translateY(0);opacity:0.4}30%{transform:translateY(-4px);opacity:1}}`}</style>
                 </div>
               )}
               <div ref={messagesEndRef} />
             </div>
 
             {/* Input */}
-            <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border,rgba(255,255,255,0.07))', display: 'flex', gap: 8, alignItems: 'flex-end', flexShrink: 0 }}>
-              <div style={{ flex: 1, background: 'var(--surface,#141416)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, display: 'flex', alignItems: 'flex-end' }}>
+            <div style={{
+              padding: '14px 18px 80px', flexShrink: 0,
+              borderTop: '1px solid rgba(255,255,255,0.07)',
+              background: 'rgba(0,0,0,0.2)',
+            }}>
+              <div style={{
+                display: 'flex', gap: 8, alignItems: 'flex-end',
+                background: 'linear-gradient(155deg,rgba(255,255,255,0.07) 0%,rgba(255,255,255,0.025) 100%)',
+                backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
+                border: '1px solid rgba(255,255,255,0.12)', borderRadius: 18,
+                padding: '4px 6px 4px 4px',
+              }}>
                 <textarea
                   ref={taRef}
                   value={input}
@@ -318,9 +472,14 @@ function PrioritiesContent() {
                   onKeyDown={handleKey}
                   placeholder="Напиши ответ..."
                   rows={1}
-                  style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: 'var(--text,#e8e6e0)', fontFamily: "'DM Sans',sans-serif", fontSize: 13, lineHeight: 1.5, padding: '10px 12px', resize: 'none', maxHeight: 120, overflowY: 'auto' }}
+                  style={{
+                    flex: 1, background: 'transparent', border: 'none', outline: 'none',
+                    color: s.text, fontFamily: "'DM Sans',sans-serif", fontSize: 13,
+                    lineHeight: 1.5, padding: '9px 10px', resize: 'none',
+                    maxHeight: 120, overflowY: 'auto',
+                  }}
                 />
-                <div style={{ margin:'5px 0 5px 5px' }}>
+                <div style={{ margin: '4px 0 4px 2px' }}>
                   <VoiceButton size={32} onResult={(text) => {
                     setInput(prev => prev ? prev + ' ' + text : text)
                     if (taRef.current) {
@@ -332,14 +491,25 @@ function PrioritiesContent() {
                 <button
                   onClick={sendMessage}
                   disabled={chatLoading || !input.trim()}
-                  style={{ width:32, height:32, margin:'5px 5px 5px 0', borderRadius:8, background:chatLoading||!input.trim()?'var(--surface2,#1a1a1e)':'var(--accent,#c8b89a)', border:'none', cursor:chatLoading||!input.trim()?'not-allowed':'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill={chatLoading||!input.trim()?'#444':'#0d0d0f'}><path d="M2 21L23 12 2 3v7l15 2-15 2v7z"/></svg>
+                  style={{
+                    width: 34, height: 34, margin: '4px 0',
+                    borderRadius: 12, border: 'none', cursor: chatLoading || !input.trim() ? 'not-allowed' : 'pointer',
+                    background: chatLoading || !input.trim() ? 'rgba(255,255,255,0.06)' : `linear-gradient(135deg,${s.energy},${s.mood})`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                    boxShadow: !chatLoading && input.trim() ? `0 0 20px ${s.energy}40` : 'none',
+                    transition: 'all 0.15s',
+                  }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill={chatLoading || !input.trim() ? 'rgba(255,255,255,0.25)' : '#07090D'}>
+                    <path d="M2 21L23 12 2 3v7l15 2-15 2v7z" />
+                  </svg>
                 </button>
               </div>
             </div>
           </div>
         )}
       </div>
+
+      <BottomNav router={router} />
     </div>
   )
 }
@@ -347,4 +517,3 @@ function PrioritiesContent() {
 export default function PrioritiesPage() {
   return <Suspense><PrioritiesContent /></Suspense>
 }
-
