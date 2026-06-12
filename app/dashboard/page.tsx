@@ -510,36 +510,60 @@ export default function Dashboard() {
       <div style={{ maxWidth:540, margin:'0 auto', padding:'18px 18px 0', display:'flex', flexDirection:'column', gap:14 }}>
 
         {/* ══════════════════════════════════════════════════ */}
-        {/*  NO SESSION                                        */}
+        {/*  NO SESSION — ONBOARDING WELCOME                   */}
         {/* ══════════════════════════════════════════════════ */}
         {!completedSession && (
           <div style={{ animation:'fadeUp 0.5s ease forwards' }}>
             <div style={{
-              borderRadius:40, padding:'52px 32px 48px',
-              background:'linear-gradient(145deg,#0D1525 0%,#090C17 55%,#10082A 100%)',
-              position:'relative', overflow:'hidden',
-              boxShadow:'0 0 120px rgba(106,168,255,0.12)',
+              borderRadius: 40, padding: '48px 28px 44px',
+              background: 'linear-gradient(145deg,#0D1525 0%,#090C17 55%,#10082A 100%)',
+              position: 'relative', overflow: 'hidden',
+              boxShadow: '0 0 120px rgba(106,168,255,0.12)',
             }}>
               <div style={{ position:'absolute', top:-60, right:-40, width:280, height:280, borderRadius:'50%', background:'radial-gradient(circle,rgba(106,168,255,0.22) 0%,transparent 65%)', animation:'orbFloat 9s ease-in-out infinite', pointerEvents:'none' }} />
               <div style={{ position:'absolute', bottom:-80, left:-60, width:320, height:320, borderRadius:'50%', background:'radial-gradient(circle,rgba(177,141,255,0.14) 0%,transparent 65%)', animation:'orbFloat2 11s ease-in-out infinite', pointerEvents:'none' }} />
+
               <div style={{ position:'relative', zIndex:1 }}>
-                <div style={{ fontSize:11, color:s.muted, letterSpacing:'0.15em', textTransform:'uppercase', marginBottom:26 }}>
-                  {todayStr}
+                <div style={{ fontFamily:"'Playfair Display',serif", fontSize:34, fontWeight:400, color:s.text, lineHeight:1.15, marginBottom:12, letterSpacing:'-0.01em' }}>
+                  Привет{userName ? `, ${userName}` : ''}!
                 </div>
-                <div style={{ fontSize:52, fontWeight:700, color:s.text, lineHeight:1.05, marginBottom:16, letterSpacing:'-0.025em' }}>
-                  Привет{userName ? `,\n${userName}` : ''}
+                <div style={{ fontSize:14, color:s.dim, lineHeight:1.75, marginBottom:32 }}>
+                  Life OS — система для понимания себя как цельного организма. Вот как это работает:
                 </div>
-                <div style={{ fontSize:16, color:s.dim, lineHeight:1.7, maxWidth:290, marginBottom:36 }}>
-                  Начни с диагностики — получишь карту своего состояния и план на 2–3 месяца.
+
+                <div style={{ display:'flex', flexDirection:'column', gap:10, marginBottom:36 }}>
+                  {[
+                    { n:'1', title:'Диагностика', desc:'Разговор с ИИ о твоём состоянии', color: s.energy },
+                    { n:'2', title:'Спринты',     desc:'Небольшие поведенческие шаги',   color: s.mindfulness },
+                    { n:'3', title:'Чекины',      desc:'Ежедневное отслеживание',         color: s.recovery },
+                  ].map(step => (
+                    <div key={step.n} style={{
+                      display: 'flex', alignItems: 'center', gap: 14,
+                      background: `${step.color}0A`, border: `1px solid ${step.color}1C`,
+                      borderRadius: 18, padding: '13px 16px',
+                    }}>
+                      <div style={{
+                        width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
+                        background: `${step.color}18`, border: `1px solid ${step.color}30`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 12, fontWeight: 700, color: step.color,
+                      }}>{step.n}</div>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: s.text }}>{step.title}</div>
+                        <div style={{ fontSize: 12, color: s.muted }}>{step.desc}</div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
+
                 <button onClick={() => router.push('/chat')} style={{
-                  display:'inline-flex', alignItems:'center', gap:10,
-                  background:`linear-gradient(135deg,${s.energy} 0%,${s.mindfulness} 100%)`,
-                  color:'#07090D', border:'none', borderRadius:999,
-                  padding:'16px 36px', fontSize:15, fontWeight:600, cursor:'pointer',
-                  boxShadow:`0 0 50px rgba(106,168,255,0.5),0 4px 24px rgba(106,168,255,0.3)`,
+                  width: '100%', padding: '16px',
+                  background: `linear-gradient(135deg,${s.energy} 0%,${s.mindfulness} 100%)`,
+                  color: '#07090D', border: 'none', borderRadius: 999,
+                  fontSize: 15, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.01em',
+                  boxShadow: `0 0 50px rgba(106,168,255,0.5),0 4px 24px rgba(106,168,255,0.3)`,
                 }}>
-                  ✦ Начать диагностику
+                  Начать диагностику →
                 </button>
               </div>
             </div>
@@ -731,11 +755,50 @@ export default function Dashboard() {
             )}
 
             {activeSprints.length === 0 && (
-              <div style={{ textAlign:'center', padding:'32px 20px', background:'rgba(255,255,255,0.025)', border:'1px dashed rgba(255,255,255,0.1)', borderRadius:28, animation:'fadeUp 0.75s ease forwards' }}>
-                <p style={{ fontSize:14, color:s.muted, marginBottom:16 }}>Нет активных спринтов</p>
-                <button onClick={() => router.push('/dashboard/priorities')} style={{ background:`linear-gradient(135deg,${s.energy},${s.mindfulness})`, color:'#07090D', border:'none', borderRadius:999, padding:'12px 28px', fontSize:13, fontWeight:600, cursor:'pointer', boxShadow:`0 0 30px rgba(106,168,255,0.32)` }}>
-                  Составить план →
-                </button>
+              <div style={{
+                background: 'linear-gradient(155deg,rgba(177,141,255,0.1) 0%,rgba(255,255,255,0.025) 100%)',
+                backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
+                borderRadius: 32, padding: '28px 24px',
+                border: `1px solid rgba(177,141,255,0.22)`,
+                position: 'relative', overflow: 'hidden',
+                boxShadow: '0 0 60px rgba(177,141,255,0.08),0 20px 60px rgba(0,0,0,0.25)',
+                animation: 'fadeUp 0.75s ease forwards',
+              }}>
+                <div style={{ position:'absolute', top:-40, right:-40, width:200, height:200, borderRadius:'50%', background:'radial-gradient(circle,rgba(177,141,255,0.15) 0%,transparent 65%)', animation:'glowPulse 7s ease-in-out infinite', pointerEvents:'none' }} />
+                <div style={{ position:'relative', zIndex:1 }}>
+                  <div style={{ fontSize:11, color:s.mindfulness, opacity:0.75, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:14 }}>
+                    Следующий шаг
+                  </div>
+                  <div style={{ fontSize:18, fontWeight:600, color:s.text, lineHeight:1.35, marginBottom:10 }}>
+                    Карта состояния готова
+                  </div>
+                  <div style={{ fontSize:14, color:s.dim, lineHeight:1.7, marginBottom:22 }}>
+                    Выбери приоритет и создай первый спринт — небольшой поведенческий шаг на 2 недели.
+                  </div>
+                  <button onClick={() => router.push('/dashboard/priorities')} style={{
+                    width: '100%', padding: '14px',
+                    background: `linear-gradient(135deg,${s.mindfulness} 0%,${s.energy} 100%)`,
+                    color: '#07090D', border: 'none', borderRadius: 999,
+                    fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                    boxShadow: `0 0 40px rgba(177,141,255,0.4),0 4px 20px rgba(177,141,255,0.25)`,
+                  }}>
+                    Выбрать приоритет →
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {activeSprints.length > 0 && checkins.length === 0 && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 14,
+                background: 'rgba(82,255,154,0.05)', border: '1px solid rgba(82,255,154,0.15)',
+                borderRadius: 20, padding: '16px 20px',
+                animation: 'fadeUp 0.8s ease forwards',
+              }}>
+                <div style={{ fontSize: 22, flexShrink: 0 }}>💡</div>
+                <div style={{ fontSize: 13, color: s.dim, lineHeight: 1.65 }}>
+                  Завтра начни день с чекина — это займёт минуту
+                </div>
               </div>
             )}
 
