@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { createClient } from '@supabase/supabase-js'
-import { analyzeActivity, ActivityAnalysis } from './activity-analysis'
+import { analyzeActivity, ActivityAnalysis, WorkoutRow } from './activity-analysis'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -146,6 +146,7 @@ export async function getUserContext(userId: string): Promise<UserContext> {
     healthRes,
     recommendationsRes,
     dailyLogsRes,
+    workoutsRes,
   ] = await Promise.all([
     // Последняя завершённая сессия с State Map
     supabaseAdmin
@@ -206,6 +207,14 @@ export async function getUserContext(userId: string): Promise<UserContext> {
       .eq('user_id', userId)
       .gte('date', thirtyDaysAgoStr)
       .order('date', { ascending: false }),
+
+    // Individual workouts — last 30 days
+    supabaseAdmin
+      .from('workouts')
+      .select('date, workout_type, minutes')
+      .eq('user_id', userId)
+      .gte('date', thirtyDaysAgoStr)
+      .order('date', { ascending: false }),
   ])
 
   const healthRows = healthRes.data || []
@@ -243,6 +252,7 @@ export async function getUserContext(userId: string): Promise<UserContext> {
   }
 
   const dailyLogs = dailyLogsRes.data || []
+  const workouts  = (workoutsRes.data || []) as WorkoutRow[]
 
   return {
     state_map: sessionRes.data?.state_map || null,
@@ -253,7 +263,7 @@ export async function getUserContext(userId: string): Promise<UserContext> {
     biomarker_trends: biomarkerTrends,
     active_recommendations: recommendationsRes.data || [],
     health_trends: calcHealthTrends(dailyLogs),
-    activity_analysis: analyzeActivity(dailyLogs),
+    activity_analysis: analyzeActivity(dailyLogs, workouts),
   }
 }
 

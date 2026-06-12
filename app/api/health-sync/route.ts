@@ -49,6 +49,17 @@ function parseDate(dateStr: string): string | null {
   return m ? m[1] : null
 }
 
+// ── Individual workout records ───────────────────────────────────
+
+interface WorkoutRecord {
+  user_id: string
+  date: string
+  workout_type: string
+  minutes: number | null
+  calories: number | null
+  start_time: string | null
+}
+
 // ── Per-day accumulators ─────────────────────────────────────────
 // HAE sends hundreds of intraday samples (HRV every 5 min, etc).
 // We accumulate sums+counts here, then finalise to a single row.
@@ -97,8 +108,9 @@ function finalise(acc: DayAcc): Record<string, unknown> {
 function parseHealthAutoExport(
   body: Record<string, unknown>,
   userId: string
-): Record<string, Record<string, unknown>> {
+): { byDate: Record<string, Record<string, unknown>>; workoutRecords: WorkoutRecord[] } {
   const accs: Record<string, DayAcc> = {}
+  const workoutRecords: WorkoutRecord[] = []
 
   function acc(date: string): DayAcc {
     if (!accs[date]) accs[date] = emptyAcc()
@@ -156,8 +168,8 @@ function parseHealthAutoExport(
     }
   }
 
-  const workouts: unknown[] = (body.data as any)?.workouts ?? []
-  for (const workout of workouts) {
+  const workoutEntries: unknown[] = (body.data as any)?.workouts ?? []
+  for (const workout of workoutEntries) {
     const w = workout as any
     const date = parseDate(w.start)
     if (!date) continue
@@ -169,7 +181,17 @@ function parseHealthAutoExport(
     const cals = Math.round(Number(w.activeEnergyBurned?.qty ?? w.active_energy_burned?.qty ?? 0))
     if (isRealValue(cals)) a.workout_calories += cals
 
-    if (!a.workout_type && isRealValue(w.name)) a.workout_type = w.name
+    if (isRealValue(w.name)) {
+      a.workout_type = a.workout_type ? `${a.workout_type}, ${w.name}` : w.name
+      workoutRecords.push({
+        user_id: userId,
+        date,
+        workout_type: w.name,
+        minutes: isRealValue(mins) ? mins : null,
+        calories: isRealValue(cals) ? cals : null,
+        start_time: w.start || null,
+      })
+    }
   }
 
   // Finalise accumulators → per-date rows; drop empty dates
@@ -180,7 +202,7 @@ function parseHealthAutoExport(
     if (hasData) byDate[date] = row
   }
 
-  return byDate
+  return { byDate, workoutRecords }
 }
 
 export async function GET() {
@@ -218,14 +240,44 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'user_id query param required' }, { status: 400 })
     }
 
-    const newByDate = parseHealthAutoExport(body, userId)
+    const { byDate: newByDate, workoutRecords } = parseHealthAutoExport(body, userId)
     const dates = Object.keys(newByDate)
+
+    if (dates.length === 0 && workoutRecords.length === 0) {
+      return NextResponse.json({ success: true, dates_processed: [], fields_saved: {} })
+    }
+
+    // ── 1. Upsert individual workouts ──────────────────────────────
+    if (workoutRecords.length > 0) {
+      const { error: wErr } = await supabase
+        .from('workouts')
+        .upsert(workoutRecords, { onConflict: 'user_id,date,workout_type,start_time', ignoreDuplicates: true })
+      if (wErr) console.error('[health-sync] workouts upsert error:', wErr)
+    }
 
     if (dates.length === 0) {
       return NextResponse.json({ success: true, dates_processed: [], fields_saved: {} })
     }
 
-    // Fetch existing rows to avoid overwriting good data with empty values
+    // ── 2. Re-aggregate workout fields from workouts table ─────────
+    // Query ALL workouts for the affected dates so daily_logs reflects
+    // the full history, not just the current sync.
+    const { data: allWorkoutsForDates } = await supabase
+      .from('workouts')
+      .select('date, workout_type, minutes, calories')
+      .eq('user_id', userId)
+      .in('date', dates)
+
+    const workoutAgg: Record<string, { mins: number; cals: number; types: Set<string> }> = {}
+    for (const w of allWorkoutsForDates ?? []) {
+      if (!workoutAgg[w.date]) workoutAgg[w.date] = { mins: 0, cals: 0, types: new Set() }
+      const a = workoutAgg[w.date]
+      if (w.minutes)  a.mins += Number(w.minutes)
+      if (w.calories) a.cals += Number(w.calories)
+      if (w.workout_type) a.types.add(w.workout_type)
+    }
+
+    // ── 3. Fetch existing daily_logs to preserve non-workout fields ─
     const { data: existingRows } = await supabase
       .from('daily_logs')
       .select([...HAE_NUMERIC_FIELDS, ...HAE_TEXT_FIELDS, 'date'].join(', '))
@@ -237,18 +289,23 @@ export async function POST(req: NextRequest) {
       existingByDate[row.date] = row
     }
 
-    // Merge: existing base + new real values on top
+    // ── 4. Merge and build upsert rows ─────────────────────────────
     const upsertRows: Record<string, unknown>[] = []
     const fieldsSaved: Record<string, string[]> = {}
 
     for (const date of dates) {
       const existing = existingByDate[date] ?? {}
       const incoming = newByDate[date]
+      const agg      = workoutAgg[date]
 
       const merged: Record<string, unknown> = { user_id: userId, date }
       const written: string[] = []
 
-      for (const field of HAE_NUMERIC_FIELDS) {
+      // Non-workout numeric fields: prefer new real value, keep existing otherwise
+      const nonWorkoutNumeric = HAE_NUMERIC_FIELDS.filter(
+        f => f !== 'workout_minutes' && f !== 'workout_calories'
+      )
+      for (const field of nonWorkoutNumeric) {
         if (isRealValue(incoming[field])) {
           merged[field] = incoming[field]
           written.push(field)
@@ -256,13 +313,20 @@ export async function POST(req: NextRequest) {
           merged[field] = existing[field]
         }
       }
-      for (const field of HAE_TEXT_FIELDS) {
-        if (isRealValue(incoming[field])) {
-          merged[field] = incoming[field]
-          written.push(field)
-        } else if (isRealValue(existing[field])) {
-          merged[field] = existing[field]
+
+      // Workout aggregate: always derive from workouts table (full history)
+      if (agg) {
+        if (agg.mins  > 0) { merged.workout_minutes  = agg.mins;  written.push('workout_minutes') }
+        if (agg.cals  > 0) { merged.workout_calories = Math.round(agg.cals); written.push('workout_calories') }
+        if (agg.types.size > 0) {
+          merged.workout_type = [...agg.types].sort().join(', ')
+          written.push('workout_type')
         }
+      } else {
+        // No workouts table rows for this date — keep existing
+        if (isRealValue(existing.workout_minutes))  merged.workout_minutes  = existing.workout_minutes
+        if (isRealValue(existing.workout_calories)) merged.workout_calories = existing.workout_calories
+        if (isRealValue(existing.workout_type))     merged.workout_type     = existing.workout_type
       }
 
       upsertRows.push(merged)

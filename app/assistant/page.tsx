@@ -76,7 +76,7 @@ function BottomNav({ router }) {
   const current = typeof window !== 'undefined' ? window.location.pathname : ''
   return (
     <nav style={{
-      position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
+      position: 'fixed', bottom: 'calc(20px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)',
       background: 'rgba(8,10,16,0.92)',
       backdropFilter: 'blur(32px)', WebkitBackdropFilter: 'blur(32px)',
       border: '1px solid rgba(255,255,255,0.1)',
@@ -372,7 +372,7 @@ function AssistantContent() {
 
       {/* Glass input bar — fixed above BottomNav */}
       <div style={{
-        position: 'fixed', bottom: 88, left: 0, right: 0,
+        position: 'fixed', bottom: 'calc(88px + env(safe-area-inset-bottom))', left: 0, right: 0,
         padding: '10px 18px',
         background: 'rgba(7,9,13,0.75)',
         backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',

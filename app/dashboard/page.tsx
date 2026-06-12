@@ -351,7 +351,7 @@ function BottomNav({ router }) {
   const current = typeof window !== 'undefined' ? window.location.pathname : ''
   return (
     <nav style={{
-      position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
+      position: 'fixed', bottom: 'calc(20px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)',
       background:    'rgba(8,10,16,0.92)',
       backdropFilter:'blur(32px)', WebkitBackdropFilter:'blur(32px)',
       border:        '1px solid rgba(255,255,255,0.1)',
@@ -389,6 +389,7 @@ export default function Dashboard() {
   const [todayLog, setTodayLog]       = useState(null)
   const [weekLogs, setWeekLogs]       = useState([])
   const [monthLogs, setMonthLogs]     = useState([])
+  const [workouts, setWorkouts]       = useState([])
   const [checkins, setCheckins]       = useState([])
   const [loading, setLoading]         = useState(true)
   const [showHistory, setShowHistory] = useState(false)
@@ -415,12 +416,14 @@ export default function Dashboard() {
           { data: logs },
           { data: checkData },
           { data: mLogs },
+          { data: wkts },
         ] = await Promise.all([
           supabase.from('sessions').select('*').eq('user_id', u.id).order('created_at', { ascending: false }),
           supabase.from('sprints').select('*').eq('user_id', u.id).eq('status','active').order('created_at', { ascending: false }),
           supabase.from('daily_logs').select('*').eq('user_id', u.id).gte('date', weekStr).order('date'),
           supabase.from('checkins').select('*').eq('user_id', u.id).gte('date', weekStr),
           supabase.from('daily_logs').select('date,steps,workout_minutes,workout_type,vo2max').eq('user_id', u.id).gte('date', monthStr).order('date'),
+          supabase.from('workouts').select('date,workout_type,minutes').eq('user_id', u.id).gte('date', monthStr).order('date'),
         ])
 
         const { data: todayLogData } = await supabase
@@ -430,6 +433,7 @@ export default function Dashboard() {
         setSprints(spr || [])
         setWeekLogs(logs || [])
         setMonthLogs(mLogs || [])
+        setWorkouts(wkts || [])
         setTodayLog(todayLogData || null)
         setCheckins(checkData || [])
       } catch (e) {
@@ -472,7 +476,7 @@ export default function Dashboard() {
     }) || []
 
   const hasDimData        = todayLog && (todayLog.energy || todayLog.mood || todayLog.meaning || todayLog.connection)
-  const activityAnalysis  = analyzeActivity(monthLogs)
+  const activityAnalysis  = analyzeActivity(monthLogs, workouts)
 
   const wellbeingIndex = todayLog?.wellbeing_index
     ? parseFloat(todayLog.wellbeing_index)
