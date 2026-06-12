@@ -137,7 +137,7 @@ function DimCard({ dimKey, cfg, value, weekLogs }) {
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', position: 'relative' }}>
         <div>
           <span style={{
-            fontSize: 52, fontWeight: 700, lineHeight: 1, letterSpacing: '-0.03em',
+            fontSize: 'clamp(32px, 9vw, 52px)', fontWeight: 700, lineHeight: 1, letterSpacing: '-0.03em',
             color: value ? cfg.color : 'rgba(255,255,255,0.12)',
             textShadow: value ? `0 0 40px ${cfg.color}70` : 'none',
           }}>
@@ -145,7 +145,7 @@ function DimCard({ dimKey, cfg, value, weekLogs }) {
           </span>
           {value && <span style={{ fontSize: 12, color: s.muted, marginLeft: 3 }}>/10</span>}
         </div>
-        <GlowSparkline logs={weekLogs} dimKey={dimKey} color={cfg.color} />
+        <GlowSparkline logs={weekLogs} dimKey={dimKey} color={cfg.color} width={80} />
       </div>
     </div>
   )
@@ -599,12 +599,12 @@ export default function Dashboard() {
                   <>
                     {/* big index number */}
                     <div style={{ marginBottom:6 }}>
-                      <span style={{ fontSize:80, fontWeight:700, color:s.text, lineHeight:1, letterSpacing:'-0.04em', textShadow:`0 0 80px ${accent}70` }}>
+                      <span style={{ fontSize:'clamp(52px, 20vw, 80px)', fontWeight:700, color:s.text, lineHeight:1, letterSpacing:'-0.04em', textShadow:`0 0 80px ${accent}70` }}>
                         {wellbeingIndex.toFixed(1)}
                       </span>
                       <span style={{ fontSize:20, color:s.dim, marginLeft:8 }}>/10</span>
                     </div>
-                    <div style={{ fontSize:30, fontWeight:600, color:s.text, marginBottom:4, lineHeight:1.2, letterSpacing:'-0.01em' }}>
+                    <div style={{ fontSize:'clamp(22px, 7vw, 30px)', fontWeight:600, color:s.text, marginBottom:4, lineHeight:1.2, letterSpacing:'-0.01em' }}>
                       {stateLabel}
                     </div>
                     {stateSub && <div style={{ fontSize:14, color:s.dim, marginBottom:28 }}>{stateSub}</div>}
@@ -650,7 +650,7 @@ export default function Dashboard() {
                   </>
                 ) : (
                   <>
-                    <div style={{ fontSize:48, fontWeight:700, color:s.text, lineHeight:1.1, marginBottom:14, letterSpacing:'-0.025em' }}>
+                    <div style={{ fontSize:'clamp(32px, 11vw, 48px)', fontWeight:700, color:s.text, lineHeight:1.1, marginBottom:14, letterSpacing:'-0.025em' }}>
                       Как ты<br />сегодня?
                     </div>
                     <div style={{ fontSize:15, color:s.dim, marginBottom:36, lineHeight:1.75 }}>
@@ -705,9 +705,9 @@ export default function Dashboard() {
               }}>
                 <div style={{ position:'absolute', top:-40, right:-40, width:200, height:200, borderRadius:'50%', background:'radial-gradient(circle,rgba(177,141,255,0.12) 0%,transparent 65%)', animation:'glowPulse 7s ease-in-out infinite', pointerEvents:'none' }} />
 
-                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
+                <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:8, marginBottom:14, flexWrap:'wrap' }}>
                   <div style={{ fontSize:14, fontWeight:600, color:s.text }}>🧬 Карта состояния</div>
-                  <div style={{ display:'flex', gap:8 }}>
+                  <div style={{ display:'flex', gap:8, flexShrink:0 }}>
                     <button onClick={() => router.push('/dashboard/priorities')} style={{ fontSize:12, color:s.mindfulness, background:'rgba(177,141,255,0.1)', border:'1px solid rgba(177,141,255,0.22)', borderRadius:999, padding:'5px 14px', cursor:'pointer' }}>
                       Приоритеты
                     </button>

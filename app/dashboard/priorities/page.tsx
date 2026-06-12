@@ -233,6 +233,18 @@ function PrioritiesContent() {
         @keyframes spin    { to{transform:rotate(360deg)} }
         @keyframes orbFloat{ 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(10px,-8px) scale(1.06)} }
         @keyframes td      { 0%,60%,100%{transform:translateY(0);opacity:0.4} 30%{transform:translateY(-4px);opacity:1} }
+        @media (max-width: 520px) {
+          .pri-left.has-active { display: none !important; }
+          .pri-right {
+            position: fixed !important;
+            top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
+            z-index: 55 !important;
+            background: #07090D !important;
+            overflow: hidden !important;
+            display: flex !important;
+            flex-direction: column !important;
+          }
+        }
       `}</style>
 
       {/* Header */}
@@ -255,7 +267,7 @@ function PrioritiesContent() {
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
 
         {/* ── Left panel ── */}
-        <div style={{
+        <div className={`pri-left${activePri ? ' has-active' : ''}`} style={{
           width: activePri ? 380 : '100%', flexShrink: 0,
           borderRight: activePri ? '1px solid rgba(255,255,255,0.07)' : 'none',
           overflowY: 'auto', padding: activePri ? '20px 18px 120px' : '20px 18px 120px',
@@ -357,7 +369,7 @@ function PrioritiesContent() {
 
         {/* ── Right panel — chat ── */}
         {activePri && (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', animation: 'fadeIn 0.3s forwards' }}>
+          <div className="pri-right" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', animation: 'fadeIn 0.3s forwards' }}>
 
             {/* Chat header */}
             <div style={{
@@ -373,7 +385,7 @@ function PrioritiesContent() {
             </div>
 
             {/* Messages */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '20px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '20px 20px 100px', display: 'flex', flexDirection: 'column', gap: 14 }}>
               {messages.map((msg, i) => {
                 const hasSprint = msg.role === 'assistant' && msg.content.includes('[SPRINT_START]')
                 const text = hasSprint ? msg.content.split('[SPRINT_START]')[0].trim() : msg.content
@@ -454,7 +466,7 @@ function PrioritiesContent() {
 
             {/* Input */}
             <div style={{
-              padding: '14px 18px 80px', flexShrink: 0,
+              padding: '14px 18px 24px', flexShrink: 0,
               borderTop: '1px solid rgba(255,255,255,0.07)',
               background: 'rgba(0,0,0,0.2)',
             }}>

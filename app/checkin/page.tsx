@@ -470,7 +470,7 @@ function CheckinContent() {
               key={d}
               onClick={() => handleDateChange(d)}
               style={{
-                flexShrink: 0, padding: '7px 16px', borderRadius: 999,
+                flexShrink: 0, padding: '10px 16px', borderRadius: 999,
                 background: isSelected
                   ? `linear-gradient(135deg,${s.energy} 0%,${s.mindfulness} 100%)`
                   : 'rgba(255,255,255,0.05)',
@@ -563,7 +563,7 @@ function CheckinContent() {
                     {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(v => (
                       <button key={v} onClick={() => setWellbeing(w => ({ ...w, [dim.key]: v }))}
                         style={{
-                          flex: 1, height: 36, borderRadius: 9,
+                          flex: 1, height: 40, borderRadius: 9,
                           background: wellbeing[dim.key] === v ? dim.color : 'rgba(255,255,255,0.05)',
                           border: `1px solid ${wellbeing[dim.key] === v ? dim.color : 'rgba(255,255,255,0.08)'}`,
                           color: wellbeing[dim.key] === v ? '#07090D' : s.dim,
@@ -664,7 +664,7 @@ function CheckinContent() {
               <div style={{ display: 'flex', gap: 4, marginBottom: 16 }}>
                 {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(v => (
                   <button key={v} onClick={() => setAnxietyLevel(v)} style={{
-                    flex: 1, height: 36, borderRadius: 9,
+                    flex: 1, height: 40, borderRadius: 9,
                     background: anxietyLevel === v ? s.mindfulness : 'rgba(255,255,255,0.05)',
                     border: `1px solid ${anxietyLevel === v ? s.mindfulness : 'rgba(255,255,255,0.08)'}`,
                     color: anxietyLevel === v ? '#07090D' : s.dim,
