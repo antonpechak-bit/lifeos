@@ -83,12 +83,21 @@ ${stateMap || 'Не указана'}
 ТЕКУЩИЙ ПРИОРИТЕТ ДЛЯ УГЛУБЛЕНИЯ:
 ${priority || 'Не указан'}`
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5',
-      max_tokens: 1024,
-      system: systemWithContext,
-      messages,
-    })
+    let response
+    try {
+      response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-5',
+        max_tokens: 1024,
+        system: systemWithContext,
+        messages,
+      })
+    } catch (aiError) {
+      console.error('Anthropic API error:', aiError)
+      return NextResponse.json(
+        { error: 'ai_error', message: 'Не удалось получить ответ от ИИ. Попробуйте снова.' },
+        { status: 500 }
+      )
+    }
 
     const reply = response.content[0].type === 'text' ? response.content[0].text : ''
 
@@ -129,6 +138,9 @@ console.log('Sprint insert error:', JSON.stringify(insertError))
     return NextResponse.json({ reply })
   } catch (error) {
     console.error('Sprint API error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Internal server error', message: 'Произошла ошибка. Попробуйте снова.' },
+      { status: 500 }
+    )
   }
 }

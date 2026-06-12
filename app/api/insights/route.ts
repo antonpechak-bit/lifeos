@@ -81,10 +81,12 @@ export async function POST(req: NextRequest) {
       }))
     }
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5',
-      max_tokens: 800,
-      system: `Ты аналитик данных благополучия. Анализируй данные недели и находи конкретные, полезные паттерны.
+    let response
+    try {
+      response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-5',
+        max_tokens: 800,
+        system: `Ты аналитик данных благополучия. Анализируй данные недели и находи конкретные, полезные паттерны.
 
 Твоя задача: найти 2-3 реальные корреляции и сформулировать actionable инсайты.
 
@@ -97,7 +99,7 @@ export async function POST(req: NextRequest) {
 ФОРМАТ ОТВЕТА (строго JSON):
 {
   "top_correlation": "краткое главное наблюдение (1 предложение)",
-  "biggest_barrier": "главное что мешало на этой неделе (1 предложение)",  
+  "biggest_barrier": "главное что мешало на этой неделе (1 предложение)",
   "next_focus": "один конкретный следующий шаг (1 предложение)",
   "insights": [
     {"title": "...", "body": "...", "type": "positive|neutral|warning"},
@@ -106,11 +108,18 @@ export async function POST(req: NextRequest) {
   ],
   "summary_text": "2-3 предложения общей картины недели"
 }`,
-      messages: [{
-        role: 'user',
-        content: `Данные недели:\n${JSON.stringify(dataSummary, null, 2)}\n\nState Map пользователя:\n${stateMapData?.state_map || 'Не указана'}`
-      }]
-    })
+        messages: [{
+          role: 'user',
+          content: `Данные недели:\n${JSON.stringify(dataSummary, null, 2)}\n\nState Map пользователя:\n${stateMapData?.state_map || 'Не указана'}`
+        }]
+      })
+    } catch (aiError) {
+      console.error('Anthropic API error:', aiError)
+      return NextResponse.json(
+        { error: 'ai_error', message: 'Не удалось получить инсайты от ИИ. Попробуйте снова.' },
+        { status: 500 }
+      )
+    }
 
     const raw = response.content[0].type === 'text' ? response.content[0].text : '{}'
     let parsed
@@ -155,6 +164,9 @@ export async function POST(req: NextRequest) {
     })
   } catch (error) {
     console.error('Insights API error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Internal server error', message: 'Произошла ошибка при загрузке инсайтов. Попробуйте снова.' },
+      { status: 500 }
+    )
   }
 }

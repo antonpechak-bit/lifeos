@@ -12,12 +12,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid messages' }, { status: 400 })
     }
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5',
-      max_tokens: 2048,
-      system: SYSTEM_PROMPT,
-      messages,
-    })
+    let response
+    try {
+      response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-5',
+        max_tokens: 2048,
+        system: SYSTEM_PROMPT,
+        messages,
+      })
+    } catch (aiError) {
+      console.error('Anthropic API error:', aiError)
+      return NextResponse.json(
+        { error: 'ai_error', message: 'Не удалось получить ответ от ИИ. Попробуйте снова.' },
+        { status: 500 }
+      )
+    }
 
     const reply = response.content[0].type === 'text' ? response.content[0].text : ''
 
@@ -41,6 +50,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ reply })
   } catch (error) {
     console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Internal server error', message: 'Произошла ошибка. Попробуйте снова.' },
+      { status: 500 }
+    )
   }
 }
