@@ -169,6 +169,8 @@ function parseHealthAutoExport(
   }
 
   const workoutEntries: unknown[] = (body.data as any)?.workouts ?? []
+  console.log(`[health-sync] workouts in payload: ${workoutEntries.length}`)
+
   for (const workout of workoutEntries) {
     const w = workout as any
     const date = parseDate(w.start)
@@ -182,6 +184,7 @@ function parseHealthAutoExport(
     if (isRealValue(cals)) a.workout_calories += cals
 
     if (isRealValue(w.name)) {
+      console.log(`[health-sync] workout → type: "${w.name}", date: ${date}, minutes: ${mins}, calories: ${cals}`)
       a.workout_type = a.workout_type ? `${a.workout_type}, ${w.name}` : w.name
       workoutRecords.push({
         user_id: userId,
@@ -249,10 +252,18 @@ export async function POST(req: NextRequest) {
 
     // ── 1. Upsert individual workouts ──────────────────────────────
     if (workoutRecords.length > 0) {
-      const { error: wErr } = await supabase
+      console.log(`[health-sync] upserting ${workoutRecords.length} workout rows to workouts table`)
+      const { error: wErr, data: wData } = await supabase
         .from('workouts')
         .upsert(workoutRecords, { onConflict: 'user_id,date,workout_type,start_time', ignoreDuplicates: true })
-      if (wErr) console.error('[health-sync] workouts upsert error:', wErr)
+        .select('id, date, workout_type, minutes, calories')
+      if (wErr) {
+        console.error('[health-sync] workouts upsert FAILED:', { message: wErr.message, code: wErr.code, details: wErr.details })
+      } else {
+        console.log(`[health-sync] workouts upsert OK — rows returned: ${wData?.length ?? 0}`, wData)
+      }
+    } else {
+      console.log('[health-sync] no workout records to upsert')
     }
 
     if (dates.length === 0) {
