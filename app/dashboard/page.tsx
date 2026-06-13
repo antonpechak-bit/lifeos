@@ -156,8 +156,10 @@ function SprintCard({ sprint, checkins, today, router }) {
   const sprintCheckins = checkins.filter(c => c.sprint_id === sprint.id)
   const doneCount = sprintCheckins.filter(c => c.completed).length
   const todayDone = sprintCheckins.some(c => c.date === today && c.completed)
-  const target    = sprint.target_days || 14
+  const target    = sprint.target_days || 21
   const pct       = Math.min(doneCount / target, 1)
+  const daysElapsed   = Math.ceil((new Date() - new Date(sprint.created_at)) / 86400000)
+  const daysRemaining = target - daysElapsed
 
   const weekDays  = []
   const dayLabels = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс']
@@ -172,6 +174,7 @@ function SprintCard({ sprint, checkins, today, router }) {
   const r = 28, circ = 2 * Math.PI * r, sz = 72
 
   return (
+  <>
     <div style={{
       background:        'linear-gradient(155deg,rgba(255,255,255,0.075) 0%,rgba(255,255,255,0.025) 100%)',
       backdropFilter:    'blur(40px)',
@@ -195,6 +198,15 @@ function SprintCard({ sprint, checkins, today, router }) {
             {sprint.behavior_name}
           </div>
           {sprint.anchor && <div style={{ fontSize:12, color:s.muted }}>⚓ {sprint.anchor}</div>}
+          <div style={{
+            display: 'inline-flex', marginTop: 8,
+            fontSize: 10, fontWeight: 500, borderRadius: 999, padding: '3px 10px',
+            background: daysRemaining > 0 ? 'rgba(106,168,255,0.1)' : daysRemaining === 0 ? 'rgba(255,184,77,0.15)' : 'rgba(255,90,90,0.12)',
+            border: `1px solid ${daysRemaining > 0 ? 'rgba(106,168,255,0.25)' : daysRemaining === 0 ? 'rgba(255,184,77,0.35)' : 'rgba(255,90,90,0.3)'}`,
+            color: daysRemaining > 0 ? s.energy : daysRemaining === 0 ? s.stress : s.overload,
+          }}>
+            {daysRemaining > 0 ? `Осталось ${daysRemaining} дн.` : daysRemaining === 0 ? 'Завершается сегодня' : 'Спринт завершён'}
+          </div>
         </div>
         {/* arc ring */}
         <div style={{ position:'relative', width:sz, height:sz, flexShrink:0 }}>
@@ -245,6 +257,28 @@ function SprintCard({ sprint, checkins, today, router }) {
         {todayDone ? '✓ Отмечено сегодня' : '→ Отметить выполнение'}
       </button>
     </div>
+
+    {daysRemaining <= 0 && (
+      <div style={{
+        background: 'linear-gradient(155deg,rgba(255,184,77,0.07) 0%,rgba(255,255,255,0.02) 100%)',
+        backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
+        border: '1px solid rgba(255,184,77,0.15)',
+        borderRadius: 24, padding: '16px 20px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+      }}>
+        <div style={{ fontSize: 13, color: s.dim, lineHeight: 1.5, flex: 1 }}>
+          Спринт «{sprint.behavior_name}» завершён. Хочешь обсудить итоги?
+        </div>
+        <button onClick={() => router.push('/assistant')} style={{
+          flexShrink: 0, padding: '8px 16px', borderRadius: 999, border: 'none',
+          background: `linear-gradient(135deg,${s.stress} 0%,${s.mindfulness} 100%)`,
+          color: '#07090D', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+        }}>
+          Обсудить →
+        </button>
+      </div>
+    )}
+  </>
   )
 }
 

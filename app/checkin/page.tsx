@@ -94,7 +94,10 @@ function SprintCard({ sprint, weekDays, done, barrier, onDoneChange, onBarrierCh
     ? new Date(selY, selM - 1, selD).toLocaleDateString('ru', { day: 'numeric', month: 'long' })
     : 'сегодня'
 
-  const dayNumber = Math.ceil((new Date() - new Date(sprint.started_at)) / 86400000) + 1
+  const target = sprint.target_days || 21
+  const daysElapsed = Math.ceil((new Date() - new Date(sprint.created_at)) / 86400000)
+  const daysRemaining = target - daysElapsed
+  const dayNumber = daysElapsed + 1
 
   return (
     <div>
@@ -109,8 +112,18 @@ function SprintCard({ sprint, weekDays, done, barrier, onDoneChange, onBarrierCh
       }}>
         <div style={{ position: 'absolute', bottom: -40, right: -40, width: 180, height: 180, borderRadius: '50%', background: 'radial-gradient(circle,rgba(82,255,154,0.1) 0%,transparent 65%)', pointerEvents: 'none', animation: 'orbFloat 7s ease-in-out infinite' }} />
 
-        <div style={{ fontSize: 10, color: s.muted, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>
-          День {dayNumber} из {sprint.target_days}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <div style={{ fontSize: 10, color: s.muted, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+            День {dayNumber} из {target}
+          </div>
+          <div style={{
+            fontSize: 10, fontWeight: 500, borderRadius: 999, padding: '3px 10px',
+            background: daysRemaining > 0 ? 'rgba(106,168,255,0.1)' : daysRemaining === 0 ? 'rgba(255,184,77,0.15)' : 'rgba(255,90,90,0.12)',
+            border: `1px solid ${daysRemaining > 0 ? 'rgba(106,168,255,0.25)' : daysRemaining === 0 ? 'rgba(255,184,77,0.35)' : 'rgba(255,90,90,0.3)'}`,
+            color: daysRemaining > 0 ? s.energy : daysRemaining === 0 ? s.stress : s.overload,
+          }}>
+            {daysRemaining > 0 ? `Осталось ${daysRemaining} дн.` : daysRemaining === 0 ? 'Завершается сегодня' : 'Спринт завершён'}
+          </div>
         </div>
         <div style={{ fontSize: 17, fontWeight: 600, color: s.text, marginBottom: 6 }}>{sprint.behavior_name}</div>
         {sprint.behavior_description && (
@@ -168,7 +181,7 @@ function SprintCard({ sprint, weekDays, done, barrier, onDoneChange, onBarrierCh
         <div style={{ fontSize: 10, color: s.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
           Чекин · {checkinDateLabel}
         </div>
-        <div style={{ display: 'flex', gap: 8, marginBottom: (done === 'no' || done === 'partial') ? 12 : 0 }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
           {([['yes', '✓ Да', s.recovery], ['partial', '≈ Частично', s.stress], ['no', '× Нет', s.overload]] as [string,string,string][]).map(([val, label, color]) => (
             <button
               key={val}
@@ -188,20 +201,19 @@ function SprintCard({ sprint, weekDays, done, barrier, onDoneChange, onBarrierCh
           ))}
         </div>
 
-        {(done === 'no' || done === 'partial') && (
-          <div style={{ animation: 'fadeUp 0.2s forwards' }}>
-            <div style={{ fontSize: 12, color: s.dim, marginBottom: 8 }}>Что помешало?</div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                value={barrier}
-                onChange={e => onBarrierChange(e.target.value)}
-                placeholder="Коротко..."
-                style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, padding: '10px 14px', color: s.text, fontFamily: "'DM Sans',sans-serif", fontSize: 13, outline: 'none' }}
-              />
-              <VoiceButton size={40} onResult={text => onBarrierChange(text)} />
-            </div>
+        <div>
+          <div style={{ fontSize: 11, color: s.muted, marginBottom: 6 }}>Заметка (необязательно)</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <textarea
+              value={barrier}
+              onChange={e => onBarrierChange(e.target.value)}
+              placeholder="Что-то важное об этом дне..."
+              rows={2}
+              style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, padding: '10px 14px', color: s.text, fontFamily: "'DM Sans',sans-serif", fontSize: 13, outline: 'none', resize: 'none' }}
+            />
+            <VoiceButton size={40} onResult={text => onBarrierChange(text)} />
           </div>
-        )}
+        </div>
       </div>
     </div>
   )
@@ -374,10 +386,11 @@ function CheckinContent() {
     if (!user) { setStep('physio'); return }
     for (const spr of sprints) {
       const done = sprintDones[spr.id]
-      if (done) {
+      const note = barriers[spr.id]
+      if (done || note) {
         await supabase.from('checkins').upsert({
           sprint_id: spr.id, user_id: user.id, date: selectedDate,
-          completed: done === 'yes', note: barriers[spr.id] || null,
+          completed: done === 'yes', note: note || null,
         }, { onConflict: 'sprint_id,date' })
       }
     }
