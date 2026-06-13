@@ -841,6 +841,22 @@ export default function Dashboard() {
               </div>
             )}
 
+            {/* ── VALUES CARD ───────────────────────────────── */}
+            <div style={{
+              background: 'linear-gradient(155deg,rgba(200,158,255,0.08) 0%,rgba(255,255,255,0.02) 100%)',
+              backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
+              border: '1px solid rgba(200,158,255,0.18)',
+              borderRadius: 28, padding: '20px 20px',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              cursor: 'pointer', animation: 'fadeUp 0.8s ease forwards',
+            }} onClick={() => router.push('/dashboard/values')}>
+              <div>
+                <div style={{ fontSize: 11, color: '#C89EFF', opacity: 0.8, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 6 }}>🧭 Ценности</div>
+                <div style={{ fontSize: 14, color: s.dim }}>Исследовать смысл и выравнивание</div>
+              </div>
+              <div style={{ fontSize: 22, color: '#C89EFF' }}>→</div>
+            </div>
+
             {/* ── SESSION HISTORY ───────────────────────────── */}
             {sessions.length > 0 && (
               <div style={{ animation:'fadeUp 0.8s ease forwards' }}>

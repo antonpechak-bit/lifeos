@@ -262,9 +262,10 @@ function BottomNav({ router }) {
 
 function CheckinContent() {
   const router = useRouter()
-  const [step, setStep] = useState('loading') // loading | sprint | physio | done
+  const [step, setStep] = useState('loading') // loading | sprint | physio | values | done
 
   const [user, setUser] = useState(null)
+  const [token, setToken] = useState('')
   const [sprints, setSprints] = useState([])
   const [infoModal, setInfoModal] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -285,6 +286,10 @@ function CheckinContent() {
   const [anxietyLevel, setAnxietyLevel] = useState(null)
   const [regulation, setRegulation] = useState(null)
 
+  // Values alignment
+  const [userValues, setUserValues] = useState([])
+  const [valueScores, setValueScores] = useState({})
+
   const today = localDateStr()
   const [selectedDate, setSelectedDate] = useState(today)
 
@@ -296,14 +301,25 @@ function CheckinContent() {
         const { data: authData } = await supabase.auth.getSession()
         if (!authData?.session) { router.push('/'); return }
         const u = authData.session.user
+        const t = authData.session.access_token
         setUser(u)
+        setToken(t)
 
-        const { data: sprintData } = await supabase
-          .from('sprints').select('*').eq('user_id', u.id).eq('status', 'active')
-          .order('created_at', { ascending: false })
+        const [{ data: sprintData }, valuesRes] = await Promise.all([
+          supabase
+            .from('sprints').select('*').eq('user_id', u.id).eq('status', 'active')
+            .order('created_at', { ascending: false }),
+          fetch(`/api/values?userId=${u.id}`, { headers: { Authorization: `Bearer ${t}` } }),
+        ])
 
         const allSprints = sprintData || []
         setSprints(allSprints)
+
+        if (valuesRes.ok) {
+          const { values } = await valuesRes.json()
+          setUserValues(values || [])
+        }
+
         await loadData(u, today, allSprints)
         setStep('sprint')
       } catch (e) {
@@ -414,6 +430,37 @@ function CheckinContent() {
     }, { onConflict: 'user_id,date' })
 
     setSaving(false)
+
+    if (userValues.length > 0) {
+      setStep('values')
+    } else {
+      setStep('done')
+      setTimeout(() => router.push('/dashboard'), 1500)
+    }
+  }
+
+  async function saveValues() {
+    if (!user || userValues.length === 0) {
+      setStep('done')
+      setTimeout(() => router.push('/dashboard'), 1500)
+      return
+    }
+
+    setSaving(true)
+    const rows = userValues
+      .filter(v => valueScores[v.id] != null)
+      .map(v => ({
+        user_id: user.id,
+        value_id: v.id,
+        date: selectedDate,
+        score: valueScores[v.id],
+      }))
+
+    if (rows.length > 0) {
+      await supabase.from('value_checkins').upsert(rows, { onConflict: 'user_id,value_id,date' })
+    }
+
+    setSaving(false)
     setStep('done')
     setTimeout(() => router.push('/dashboard'), 1500)
   }
@@ -466,7 +513,7 @@ function CheckinContent() {
           <button onClick={() => router.push('/dashboard')} style={{ fontSize: 13, color: s.dim, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>← Назад</button>
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 17, color: s.text, marginBottom: 2 }}>
-              {step === 'sprint' ? '⚡ Спринт' : '📊 Состояние'}
+              {step === 'sprint' ? '⚡ Спринт' : step === 'values' ? '🧭 Ценности' : '📊 Состояние'}
             </div>
             <div style={{ fontSize: 12, color: s.dim }}>{dateDisplayLabel}</div>
           </div>
@@ -707,6 +754,61 @@ function CheckinContent() {
 
           </div>
         )}
+
+        {/* ── ЭКРАН 3: ЦЕННОСТИ ── */}
+        {step === 'values' && userValues.length > 0 && (
+          <div style={{ animation: 'fadeUp 0.3s forwards' }}>
+            <div style={{
+              background: 'linear-gradient(155deg,rgba(200,158,255,0.08) 0%,rgba(255,255,255,0.02) 100%)',
+              backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
+              border: '1px solid rgba(200,158,255,0.15)',
+              borderRadius: 32, padding: '22px 20px',
+              marginBottom: 12,
+            }}>
+              <div style={{ fontSize: 10, color: '#C89EFF', opacity: 0.9, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>🧭 Ценности сегодня</div>
+              <div style={{ fontSize: 13, color: s.muted, marginBottom: 18, lineHeight: 1.6 }}>
+                Насколько сегодня отражена каждая ценность? (1–10)
+              </div>
+
+              {userValues.map(v => (
+                <div key={v.id} style={{ marginBottom: 20 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <div>
+                      <span style={{ fontSize: 14, fontWeight: 500, color: s.text }}>{v.value_name}</span>
+                      {v.operationalization && (
+                        <div style={{ fontSize: 11, color: s.muted, marginTop: 2, lineHeight: 1.5 }}>
+                          {v.operationalization.split('\n')[0]}
+                        </div>
+                      )}
+                    </div>
+                    {valueScores[v.id] != null && (
+                      <span style={{ fontSize: 20, fontWeight: 700, color: '#C89EFF', minWidth: 28, textAlign: 'right' }}>{valueScores[v.id]}</span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
+                      <button
+                        key={n}
+                        onClick={() => setValueScores(prev => ({ ...prev, [v.id]: n }))}
+                        style={{
+                          flex: 1, height: 36, borderRadius: 8,
+                          background: valueScores[v.id] === n ? '#C89EFF' : 'rgba(255,255,255,0.05)',
+                          border: `1px solid ${valueScores[v.id] === n ? '#C89EFF' : 'rgba(255,255,255,0.08)'}`,
+                          color: valueScores[v.id] === n ? '#07090D' : s.muted,
+                          fontSize: 11, fontWeight: valueScores[v.id] === n ? 700 : 400,
+                          cursor: 'pointer', transition: 'all 0.15s',
+                          boxShadow: valueScores[v.id] === n ? '0 0 14px rgba(200,158,255,0.5)' : 'none',
+                        }}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* CTA button — floats above bottom nav */}
@@ -736,6 +838,20 @@ function CheckinContent() {
               fontSize: 15, fontWeight: 600,
               fontFamily: "'DM Sans',sans-serif", transition: 'all 0.3s',
               boxShadow: saving ? 'none' : `0 0 40px ${s.energy}50, 0 4px 24px ${s.energy}30`,
+            }}>
+              {saving ? 'Сохраняем...' : userValues.length > 0 ? 'Далее →' : 'Сохранить чекин'}
+            </button>
+          )}
+          {step === 'values' && (
+            <button onClick={saveValues} disabled={saving} style={{
+              width: '100%', padding: '15px',
+              borderRadius: 999, border: 'none',
+              cursor: saving ? 'default' : 'pointer',
+              background: saving ? 'rgba(255,255,255,0.06)' : 'linear-gradient(135deg,#C89EFF 0%,#B18DFF 100%)',
+              color: saving ? s.muted : '#07090D',
+              fontSize: 15, fontWeight: 600,
+              fontFamily: "'DM Sans',sans-serif", transition: 'all 0.3s',
+              boxShadow: saving ? 'none' : '0 0 40px rgba(200,158,255,0.5), 0 4px 24px rgba(200,158,255,0.3)',
             }}>
               {saving ? 'Сохраняем...' : 'Сохранить чекин'}
             </button>

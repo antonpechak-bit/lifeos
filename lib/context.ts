@@ -60,6 +60,14 @@ export interface PeriodSummary {
   metrics: Record<string, any>
 }
 
+export interface UserValue {
+  id: string
+  value_name: string
+  layer: number | null
+  operationalization: string | null
+  alignment_score: number | null
+}
+
 export interface UserContext {
   state_map: string | null
   active_sprints: any[]
@@ -73,6 +81,7 @@ export interface UserContext {
   client_insights: ClientInsight[]
   layer_statuses: LayerStatus[]
   period_summaries: PeriodSummary[]
+  user_values: UserValue[]
 }
 
 // ─── Оценка статуса биомаркера по ref_min/ref_max из данных ──
@@ -171,6 +180,10 @@ export async function getUserContext(userId: string): Promise<UserContext> {
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
   const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().slice(0, 10)
 
+  const fourteenDaysAgo = new Date()
+  fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14)
+  const fourteenDaysAgoStr = fourteenDaysAgo.toISOString().slice(0, 10)
+
   const [
     sessionRes,
     sprintsRes,
@@ -183,6 +196,8 @@ export async function getUserContext(userId: string): Promise<UserContext> {
     clientInsightsRes,
     layerStatusRes,
     periodSummariesRes,
+    userValuesRes,
+    valueCheckinsRes,
   ] = await Promise.all([
     // Последняя завершённая сессия с State Map
     supabaseAdmin
@@ -275,6 +290,20 @@ export async function getUserContext(userId: string): Promise<UserContext> {
       .in('period_type', ['month', 'quarter', 'year'])
       .order('period_start', { ascending: false })
       .limit(6),
+
+    // User values
+    supabaseAdmin
+      .from('user_values')
+      .select('id, value_name, layer, operationalization, alignment_score')
+      .eq('user_id', userId)
+      .order('created_at'),
+
+    // Value checkins — last 14 days for alignment score computation
+    supabaseAdmin
+      .from('value_checkins')
+      .select('value_id, score')
+      .eq('user_id', userId)
+      .gte('date', fourteenDaysAgoStr),
   ])
 
   const healthRows = healthRes.data || []
@@ -314,6 +343,17 @@ export async function getUserContext(userId: string): Promise<UserContext> {
   const dailyLogs = dailyLogsRes.data || []
   const workouts  = (workoutsRes.data || []) as WorkoutRow[]
 
+  // Compute alignment scores from recent value_checkins
+  const rawValues = (userValuesRes.data || []) as UserValue[]
+  const valueCheckins = valueCheckinsRes.data || []
+  const userValues: UserValue[] = rawValues.map(v => {
+    const vc = valueCheckins.filter((c: any) => c.value_id === v.id)
+    const alignmentScore = vc.length > 0
+      ? Math.round(vc.reduce((sum: number, c: any) => sum + c.score, 0) / vc.length * 10)
+      : v.alignment_score
+    return { ...v, alignment_score: alignmentScore }
+  })
+
   return {
     state_map: sessionRes.data?.state_map || null,
     active_sprints: sprintsRes.data || [],
@@ -327,6 +367,7 @@ export async function getUserContext(userId: string): Promise<UserContext> {
     client_insights: (clientInsightsRes.data || []) as ClientInsight[],
     layer_statuses: (layerStatusRes.data || []) as LayerStatus[],
     period_summaries: (periodSummariesRes.data || []) as PeriodSummary[],
+    user_values: userValues,
   }
 }
 
@@ -469,6 +510,16 @@ export function formatContextForPrompt(ctx: UserContext): string {
         return `- Слой ${ls.layer}${name}: ${ls.status}, последняя проверка: ${daysAgo}${notes}`
       })
     parts.push(`## Состояние по слоям\n${statusLines.join('\n')}`)
+  }
+
+  if (ctx.user_values && ctx.user_values.length > 0) {
+    const valueLines = ctx.user_values.map(v => {
+      const score = v.alignment_score != null ? ` · alignment ${v.alignment_score}%` : ''
+      const layer = v.layer != null ? ` [слой ${v.layer}]` : ''
+      const op = v.operationalization ? ` — ${v.operationalization.replace(/\n/g, '; ')}` : ''
+      return `- ${v.value_name}${layer}${score}${op}`
+    })
+    parts.push(`## Ценности и alignment (14 дней)\n${valueLines.join('\n')}`)
   }
 
   if (ctx.period_summaries.length > 0) {
