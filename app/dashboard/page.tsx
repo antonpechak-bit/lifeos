@@ -269,7 +269,7 @@ function SprintCard({ sprint, checkins, today, router }) {
         <div style={{ fontSize: 13, color: s.dim, lineHeight: 1.5, flex: 1 }}>
           Спринт «{sprint.behavior_name}» завершён. Хочешь обсудить итоги?
         </div>
-        <button onClick={() => router.push('/assistant')} style={{
+        <button onClick={() => router.push(`/sprint-review/${sprint.id}`)} style={{
           flexShrink: 0, padding: '8px 16px', borderRadius: 999, border: 'none',
           background: `linear-gradient(135deg,${s.stress} 0%,${s.mindfulness} 100%)`,
           color: '#07090D', fontSize: 12, fontWeight: 600, cursor: 'pointer',
