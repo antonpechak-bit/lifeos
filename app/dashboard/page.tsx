@@ -154,12 +154,13 @@ function DimCard({ dimKey, cfg, value, weekLogs }) {
 // ── Sprint Card ────────────────────────────────────────────────
 function SprintCard({ sprint, checkins, today, router }) {
   const sprintCheckins = checkins.filter(c => c.sprint_id === sprint.id)
-  const doneCount = sprintCheckins.filter(c => c.completed).length
   const todayDone = sprintCheckins.some(c => c.date === today && c.completed)
   const target    = sprint.target_days || 21
-  const pct       = Math.min(doneCount / target, 1)
-  const daysElapsed   = Math.ceil((new Date() - new Date(sprint.created_at)) / 86400000)
+  const daysElapsed   = Math.max(1, Math.ceil((new Date() - new Date(sprint.created_at)) / 86400000))
   const daysRemaining = target - daysElapsed
+  const pct       = Math.min(daysElapsed / target, 1)
+
+  const todayLabel = new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }).replace('.', '')
 
   const weekDays  = []
   const dayLabels = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс']
@@ -192,7 +193,7 @@ function SprintCard({ sprint, checkins, today, router }) {
       <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:18 }}>
         <div style={{ flex:1, paddingRight:14 }}>
           <div style={{ fontSize:11, color:s.muted, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:6 }}>
-            День {Math.ceil((new Date() - new Date(sprint.started_at)) / 86400000) + 1} · {doneCount}/{target}
+            День {daysElapsed} · {todayLabel}
           </div>
           <div style={{ fontSize:18, fontWeight:600, color:s.text, lineHeight:1.3, marginBottom: sprint.anchor ? 5 : 0 }}>
             {sprint.behavior_name}
@@ -217,7 +218,7 @@ function SprintCard({ sprint, checkins, today, router }) {
               style={{ filter:`drop-shadow(0 0 8px ${s.recovery}99)`, transition:'stroke-dashoffset 0.8s ease' }} />
           </svg>
           <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center' }}>
-            <span style={{ fontSize:15, fontWeight:600, color:s.recovery, lineHeight:1 }}>{doneCount}</span>
+            <span style={{ fontSize:15, fontWeight:600, color:s.recovery, lineHeight:1 }}>{daysElapsed}</span>
             <span style={{ fontSize:9, color:s.muted }}>/{target}</span>
           </div>
         </div>
