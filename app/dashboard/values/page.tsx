@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, Suspense } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { VoiceButton } from '@/lib/VoiceButton'
 
 const s = {
   bg:          '#07090D',
@@ -455,6 +456,7 @@ function ValuesContent() {
                   lineHeight: 1.6,
                 }}
               />
+              <VoiceButton size={40} onResult={text => setCurrentAnswer(prev => prev ? prev + ' ' + text : text)} />
               <button
                 onClick={submitAnswer}
                 disabled={!currentAnswer.trim()}
@@ -656,18 +658,24 @@ function ValuesContent() {
 
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontSize: 12, color: s.muted, marginBottom: 8 }}>Как это выглядит для тебя:</div>
-              <textarea
-                value={opTexts[opValues[opIndex].name] || ''}
-                onChange={e => setOpTexts(prev => ({ ...prev, [opValues[opIndex].name]: e.target.value }))}
-                placeholder="Конкретные проявления этой ценности в моей жизни..."
-                rows={3}
-                style={{
-                  width: '100%', background: 'rgba(255,255,255,0.05)', border: `1px solid ${s.values}25`,
-                  borderRadius: 14, padding: '12px 14px',
-                  color: s.text, fontFamily: "'DM Sans',sans-serif", fontSize: 13, fontWeight: 300,
-                  outline: 'none', resize: 'none', boxSizing: 'border-box', lineHeight: 1.6,
-                }}
-              />
+              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                <textarea
+                  value={opTexts[opValues[opIndex].name] || ''}
+                  onChange={e => setOpTexts(prev => ({ ...prev, [opValues[opIndex].name]: e.target.value }))}
+                  placeholder="Конкретные проявления этой ценности в моей жизни..."
+                  rows={3}
+                  style={{
+                    flex: 1, background: 'rgba(255,255,255,0.05)', border: `1px solid ${s.values}25`,
+                    borderRadius: 14, padding: '12px 14px',
+                    color: s.text, fontFamily: "'DM Sans',sans-serif", fontSize: 13, fontWeight: 300,
+                    outline: 'none', resize: 'none', boxSizing: 'border-box', lineHeight: 1.6,
+                  }}
+                />
+                <VoiceButton size={40} onResult={text => setOpTexts(prev => {
+                  const vName = opValues[opIndex].name
+                  return { ...prev, [vName]: prev[vName] ? prev[vName] + '\n' + text : text }
+                })} />
+              </div>
             </div>
 
             <button onClick={nextOpStep} style={{

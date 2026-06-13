@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, Suspense } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { VoiceButton } from '@/lib/VoiceButton'
 
 const s = {
   bg:          '#07090D',
@@ -394,6 +395,13 @@ function SprintReviewContent() {
               t.style.height = Math.min(t.scrollHeight, 120) + 'px'
             }}
           />
+          <VoiceButton size={38} onResult={text => {
+            setInput(prev => prev ? prev + ' ' + text : text)
+            if (inputRef.current) {
+              inputRef.current.style.height = 'auto'
+              inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 120) + 'px'
+            }
+          }} />
           <button
             onClick={() => sendMessage(input)}
             disabled={!input.trim() || sending}
