@@ -48,6 +48,18 @@ export interface LayerStatus {
   notes: string | null
 }
 
+export interface PeriodSummary {
+  id: string
+  period_type: 'month' | 'quarter' | 'year'
+  period_start: string
+  period_end: string
+  label: string | null
+  summary_text: string
+  key_themes: string[]
+  central_obs: string | null
+  metrics: Record<string, any>
+}
+
 export interface UserContext {
   state_map: string | null
   active_sprints: any[]
@@ -60,6 +72,7 @@ export interface UserContext {
   activity_analysis: ActivityAnalysis
   client_insights: ClientInsight[]
   layer_statuses: LayerStatus[]
+  period_summaries: PeriodSummary[]
 }
 
 // ─── Оценка статуса биомаркера по ref_min/ref_max из данных ──
@@ -169,6 +182,7 @@ export async function getUserContext(userId: string): Promise<UserContext> {
     workoutsRes,
     clientInsightsRes,
     layerStatusRes,
+    periodSummariesRes,
   ] = await Promise.all([
     // Последняя завершённая сессия с State Map
     supabaseAdmin
@@ -252,6 +266,15 @@ export async function getUserContext(userId: string): Promise<UserContext> {
       .from('layer_status')
       .select('layer, status, last_checked, notes')
       .eq('user_id', userId),
+
+    // Period summaries — most recent month, quarter, year
+    supabaseAdmin
+      .from('period_summaries')
+      .select('id, period_type, period_start, period_end, label, summary_text, key_themes, central_obs, metrics')
+      .eq('user_id', userId)
+      .in('period_type', ['month', 'quarter', 'year'])
+      .order('period_start', { ascending: false })
+      .limit(6),
   ])
 
   const healthRows = healthRes.data || []
@@ -303,6 +326,7 @@ export async function getUserContext(userId: string): Promise<UserContext> {
     activity_analysis: analyzeActivity(dailyLogs, workouts),
     client_insights: (clientInsightsRes.data || []) as ClientInsight[],
     layer_statuses: (layerStatusRes.data || []) as LayerStatus[],
+    period_summaries: (periodSummariesRes.data || []) as PeriodSummary[],
   }
 }
 
@@ -445,6 +469,28 @@ export function formatContextForPrompt(ctx: UserContext): string {
         return `- Слой ${ls.layer}${name}: ${ls.status}, последняя проверка: ${daysAgo}${notes}`
       })
     parts.push(`## Состояние по слоям\n${statusLines.join('\n')}`)
+  }
+
+  if (ctx.period_summaries.length > 0) {
+    // Show one of each type, most recent first
+    const byType: Record<string, PeriodSummary> = {}
+    for (const ps of ctx.period_summaries) {
+      if (!byType[ps.period_type]) byType[ps.period_type] = ps
+    }
+    const order: Array<'month' | 'quarter' | 'year'> = ['month', 'quarter', 'year']
+    const lines: string[] = []
+    for (const type of order) {
+      const ps = byType[type]
+      if (!ps) continue
+      const typeLabel = type === 'month' ? 'Месяц' : type === 'quarter' ? 'Квартал' : 'Год'
+      lines.push(`### ${typeLabel}${ps.label ? ` · ${ps.label}` : ''}`)
+      lines.push(ps.summary_text)
+      if (ps.key_themes?.length) lines.push(`Темы: ${ps.key_themes.join(', ')}`)
+      if (ps.central_obs) lines.push(`Суть: ${ps.central_obs}`)
+    }
+    if (lines.length > 0) {
+      parts.push(`## Долгосрочная память (телескоп)\n${lines.join('\n')}`)
+    }
   }
 
   return parts.join('\n\n')

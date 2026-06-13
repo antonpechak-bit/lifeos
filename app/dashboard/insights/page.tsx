@@ -251,6 +251,8 @@ function InsightsContent() {
   const [generating, setGenerating] = useState(false)
   const [activeTab, setActiveTab] = useState('week')
   const [activeDim, setActiveDim] = useState('energy')
+  const [periodSummaries, setPeriodSummaries] = useState<Record<string, any>>({})
+  const [generatingPeriod, setGeneratingPeriod] = useState<string | null>(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }) => {
@@ -260,21 +262,29 @@ function InsightsContent() {
 
       try {
         const monthAgo = new Date(); monthAgo.setDate(monthAgo.getDate() - 30)
-        const { data: logsData, error: logsErr } = await supabase
-          .from('daily_logs').select('*').eq('user_id', u.id)
-          .gte('date', monthAgo.toISOString().split('T')[0]).order('date')
+        const [logsRes, sumRes, periodRes] = await Promise.all([
+          supabase.from('daily_logs').select('*').eq('user_id', u.id)
+            .gte('date', monthAgo.toISOString().split('T')[0]).order('date'),
+          supabase.from('weekly_summaries').select('*').eq('user_id', u.id)
+            .order('week_start', { ascending: false }).limit(8),
+          supabase.from('period_summaries').select('*').eq('user_id', u.id)
+            .order('period_start', { ascending: false }).limit(6),
+        ])
 
-        const { data: sumData, error: sumErr } = await supabase
-          .from('weekly_summaries').select('*').eq('user_id', u.id)
-          .order('week_start', { ascending: false }).limit(8)
+        if (logsRes.error || sumRes.error) throw logsRes.error || sumRes.error
 
-        if (logsErr || sumErr) throw logsErr || sumErr
+        setLogs(logsRes.data || [])
+        setSummaries(sumRes.data || [])
 
-        setLogs(logsData || [])
-        setSummaries(sumData || [])
+        // Index period summaries by type (most recent per type)
+        const byType: Record<string, any> = {}
+        for (const ps of (periodRes.data || [])) {
+          if (!byType[ps.period_type]) byType[ps.period_type] = ps
+        }
+        setPeriodSummaries(byType)
 
         const weekStart = getWeekStart()
-        const existing = sumData?.find(s => s.week_start === weekStart)
+        const existing = sumRes.data?.find(s => s.week_start === weekStart)
         if (existing) setCurrentWeekData(existing)
       } catch (e) {
         setError('Не удалось загрузить данные. Проверьте соединение.')
@@ -286,6 +296,37 @@ function InsightsContent() {
       setLoading(false)
     })
   }, [])
+
+  async function generatePeriod(periodType: 'month' | 'quarter' | 'year') {
+    if (!user || generatingPeriod) return
+    setGeneratingPeriod(periodType)
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData?.session?.access_token ?? ''
+      const res = await fetch('/api/period-summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ userId: user.id, periodType }),
+      })
+      const data = await res.json()
+      if (data.summary) {
+        setPeriodSummaries(prev => ({
+          ...prev,
+          [periodType]: {
+            period_type: periodType,
+            period_start: data.period.periodStart,
+            period_end:   data.period.periodEnd,
+            label:        data.period.label,
+            summary_text: data.summary.summary_text,
+            key_themes:   data.summary.key_themes || [],
+            central_obs:  data.summary.central_obs || null,
+            metrics:      data.metrics || {},
+          },
+        }))
+      }
+    } catch (e) { console.error(e) }
+    setGeneratingPeriod(null)
+  }
 
   function getWeekStart() {
     const d = new Date()
@@ -396,7 +437,7 @@ function InsightsContent() {
           border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20,
           animation: 'fadeUp 0.45s ease forwards',
         }}>
-          {[['week', '📊 Неделя'], ['trends', '📈 Тренды'], ['history', '📋 История']].map(([t, l]) => (
+          {[['week', '📊 Неделя'], ['trends', '📈 Тренды'], ['history', '📋 История'], ['memory', '🔭 Память']].map(([t, l]) => (
             <button key={t} onClick={() => setActiveTab(t)} style={{
               flex: 1, padding: '9px 12px', borderRadius: 15, fontSize: 13, textAlign: 'center', cursor: 'pointer', border: 'none',
               background: activeTab === t ? 'rgba(255,255,255,0.1)' : 'transparent',
@@ -658,6 +699,100 @@ function InsightsContent() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ── ПАМЯТЬ (telescope) ── */}
+        {activeTab === 'memory' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, animation: 'fadeUp 0.3s forwards' }}>
+
+            <div style={{ fontSize: 12, color: s.muted, lineHeight: 1.7, padding: '0 4px' }}>
+              Долгосрочная память — синтез паттернов на разных масштабах времени.
+              Каждый уровень строится из итогов предыдущего.
+            </div>
+
+            {(['month', 'quarter', 'year'] as const).map(type => {
+              const ps = periodSummaries[type]
+              const isGenerating = generatingPeriod === type
+              const typeLabel = type === 'month' ? 'Месяц' : type === 'quarter' ? 'Квартал' : 'Год'
+              const typeColor = type === 'month' ? s.energy : type === 'quarter' ? s.mood : s.connection
+              const typeIcon  = type === 'month' ? '📅' : type === 'quarter' ? '🗓' : '🌀'
+
+              return (
+                <div key={type} style={{
+                  background: ps
+                    ? `linear-gradient(155deg,${typeColor}09 0%,rgba(255,255,255,0.02) 100%)`
+                    : 'linear-gradient(155deg,rgba(255,255,255,0.04) 0%,rgba(255,255,255,0.01) 100%)',
+                  backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
+                  border: `1px solid ${ps ? `${typeColor}22` : 'rgba(255,255,255,0.07)'}`,
+                  borderRadius: 28, padding: '22px 22px 18px',
+                  position: 'relative', overflow: 'hidden',
+                }}>
+                  <div style={{ position: 'absolute', top: -40, right: -40, width: 160, height: 160, borderRadius: '50%', background: `radial-gradient(circle,${typeColor}14 0%,transparent 65%)`, pointerEvents: 'none' }} />
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: ps ? 14 : 0, position: 'relative' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 16 }}>{typeIcon}</span>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: s.text }}>{typeLabel}</div>
+                        {ps?.label && <div style={{ fontSize: 10, color: s.muted, marginTop: 1 }}>{ps.label}</div>}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => generatePeriod(type)}
+                      disabled={!!generatingPeriod}
+                      style={{
+                        fontSize: 11, padding: '7px 14px', borderRadius: 999,
+                        background: isGenerating ? 'rgba(255,255,255,0.04)' : `${typeColor}18`,
+                        border: `1px solid ${isGenerating ? 'rgba(255,255,255,0.08)' : `${typeColor}35`}`,
+                        color: isGenerating ? s.muted : typeColor,
+                        cursor: generatingPeriod ? 'not-allowed' : 'pointer',
+                        display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
+                      }}>
+                      {isGenerating
+                        ? <><span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>◌</span> Синтез...</>
+                        : ps ? '↺ Обновить' : '✦ Синтезировать'}
+                    </button>
+                  </div>
+
+                  {ps ? (
+                    <div style={{ position: 'relative' }}>
+                      <div style={{ fontSize: 13, color: s.dim, lineHeight: 1.8, marginBottom: 12 }}>
+                        {ps.summary_text}
+                      </div>
+                      {ps.key_themes?.length > 0 && (
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+                          {ps.key_themes.map((theme, i) => (
+                            <span key={i} style={{
+                              fontSize: 11, padding: '4px 10px', borderRadius: 999,
+                              background: `${typeColor}12`, color: typeColor,
+                              border: `1px solid ${typeColor}28`,
+                            }}>
+                              {theme}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {ps.central_obs && (
+                        <div style={{
+                          fontSize: 12, color: typeColor, fontStyle: 'italic',
+                          borderLeft: `2px solid ${typeColor}40`, paddingLeft: 12,
+                          lineHeight: 1.6,
+                        }}>
+                          {ps.central_obs}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 12, color: s.muted, marginTop: 10 }}>
+                      {type === 'month'   ? 'Нужны еженедельные итоги за текущий месяц' :
+                       type === 'quarter' ? 'Нужны месячные итоги за текущий квартал' :
+                                           'Нужны квартальные итоги за текущий год'}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         )}
 
