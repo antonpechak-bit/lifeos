@@ -8,7 +8,7 @@ function isStrength(t: string): boolean {
 }
 
 function isCardio(t: string): boolean {
-  return /running|walking|cycling|elliptical|rowing/i.test(t)
+  return /run|walk|cycling|elliptical|rowing/i.test(t)
 }
 
 function isHIIT(t: string): boolean {
@@ -25,12 +25,15 @@ export interface WorkoutRow {
   date: string
   workout_type: string
   minutes?: number | null
+  avg_heart_rate?: number | null
+  max_heart_rate?: number | null
 }
 
 export interface ActivityWeekly {
   strength_sessions: number
   cardio_sessions: number
-  zone2_minutes: number        // estimated from cardio session duration — no HR zone data available
+  zone2_minutes: number
+  moderate_cardio_minutes: number  // Zone 3/4: 70–85% maxHR
   hiit_sessions: number
   mobility_sessions: number
   total_workout_minutes: number
@@ -52,18 +55,22 @@ export interface ActivityAnalysis {
 
 // ── Main function ─────────────────────────────────────────────────
 
-export function analyzeActivity(dailyLogs: any[], workouts: WorkoutRow[] = []): ActivityAnalysis {
+export function analyzeActivity(dailyLogs: any[], workouts: WorkoutRow[] = [], userAge = 35): ActivityAnalysis {
   const sorted = [...dailyLogs].sort((a, b) => a.date.localeCompare(b.date))
   const last7  = sorted.slice(-7)
   const last7Dates = new Set(last7.map((r: any) => r.date))
 
   // ── Weekly aggregates (last 7 days) ──────────────────────────
-  let strength_sessions     = 0
-  let cardio_sessions       = 0
-  let zone2_minutes         = 0  // sum of cardio session minutes — proxy only, no HR zone data
-  let hiit_sessions         = 0
-  let mobility_sessions     = 0
-  let total_workout_minutes = 0
+  const maxHR = 220 - userAge
+
+  let strength_sessions       = 0
+  let cardio_sessions         = 0
+  let zone2_minutes           = 0
+  let moderate_cardio_minutes = 0
+  let hiit_sessions           = 0
+  let mobility_sessions       = 0
+  let total_workout_minutes   = 0
+  let zone2HRBased            = false
   const stepValues: number[] = []
 
   // Steps and total minutes always come from daily_logs aggregate
@@ -79,10 +86,31 @@ export function analyzeActivity(dailyLogs: any[], workouts: WorkoutRow[] = []): 
     for (const w of workouts.filter(w => last7Dates.has(w.date))) {
       const t    = w.workout_type || ''
       const mins = Number(w.minutes) || 0
-      if (isHIIT(t))       { hiit_sessions++;     }
-      else if (isStrength(t))  { strength_sessions++;  }
-      else if (isMobility(t))  { mobility_sessions++;  }
-      else if (isCardio(t))    { cardio_sessions++; zone2_minutes += mins }
+      if (isHIIT(t)) {
+        hiit_sessions++
+      } else if (isStrength(t)) {
+        strength_sessions++
+      } else if (isMobility(t)) {
+        mobility_sessions++
+      } else if (isCardio(t)) {
+        cardio_sessions++
+        const avgHR = w.avg_heart_rate ? Number(w.avg_heart_rate) : null
+        if (avgHR) {
+          zone2HRBased = true
+          const pct = avgHR / maxHR
+          if (pct < 0.60) {
+            // low intensity — movement credit only, no zone credit
+          } else if (pct < 0.70) {
+            zone2_minutes += mins
+          } else if (pct <= 0.85) {
+            moderate_cardio_minutes += mins
+          } else {
+            hiit_sessions++
+          }
+        } else {
+          zone2_minutes += mins  // no HR data — count as Zone 2 estimate
+        }
+      }
     }
   } else {
     // Fallback for old data: parse comma-separated workout_type from daily_logs
@@ -97,10 +125,10 @@ export function analyzeActivity(dailyLogs: any[], workouts: WorkoutRow[] = []): 
       const minsPerType = Math.round(mins / types.length)
 
       for (const t of types) {
-        if (isHIIT(t))       { hiit_sessions++;     }
-        else if (isStrength(t))  { strength_sessions++;  }
-        else if (isMobility(t))  { mobility_sessions++;  }
-        else if (isCardio(t))    { cardio_sessions++; zone2_minutes += minsPerType }
+        if (isHIIT(t))          { hiit_sessions++;                              }
+        else if (isStrength(t)) { strength_sessions++;                          }
+        else if (isMobility(t)) { mobility_sessions++;                          }
+        else if (isCardio(t))   { cardio_sessions++; zone2_minutes += minsPerType }
       }
     }
   }
@@ -136,10 +164,11 @@ export function analyzeActivity(dailyLogs: any[], workouts: WorkoutRow[] = []): 
   }
 
   if (zone2_minutes < 90) {
+    const z2Source = zone2HRBased ? 'по данным ЧСС (60–70% макс. ЧСС)' : 'расчётно, данных ЧСС нет'
     gaps.push({
       zone: 'zone2',
       severity: 'medium',
-      message: `Низкоинтенсивного кардио (Zone 2) набралось ${zone2_minutes} минут за неделю. Это база митохондриального здоровья и VO2max.`,
+      message: `Zone 2 кардио — ${zone2_minutes} мин за неделю (${z2Source}). Цель — 150+ мин. Это база митохондриального здоровья и VO2max.`,
       knowledge_topic: 'layer1_movement',
     })
   }
@@ -176,6 +205,7 @@ export function analyzeActivity(dailyLogs: any[], workouts: WorkoutRow[] = []): 
       strength_sessions,
       cardio_sessions,
       zone2_minutes,
+      moderate_cardio_minutes,
       hiit_sessions,
       mobility_sessions,
       total_workout_minutes,

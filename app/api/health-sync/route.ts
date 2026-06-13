@@ -58,6 +58,8 @@ interface WorkoutRecord {
   minutes: number | null
   calories: number | null
   start_time: string | null
+  avg_heart_rate: number | null
+  max_heart_rate: number | null
 }
 
 // ── Per-day accumulators ─────────────────────────────────────────
@@ -184,7 +186,9 @@ function parseHealthAutoExport(
     if (isRealValue(cals)) a.workout_calories += cals
 
     if (isRealValue(w.name)) {
-      console.log(`[health-sync] workout → type: "${w.name}", date: ${date}, minutes: ${mins}, calories: ${cals}`)
+      const avgHR = Number(w.avgHeartRate ?? w.heartRateData?.average ?? null) || null
+      const maxHR = Number(w.maxHeartRate ?? w.heartRateData?.max ?? null) || null
+      console.log(`[health-sync] workout → type: "${w.name}", date: ${date}, minutes: ${mins}, calories: ${cals}, avgHR: ${avgHR}, maxHR: ${maxHR}`)
       a.workout_type = a.workout_type ? `${a.workout_type}, ${w.name}` : w.name
       workoutRecords.push({
         user_id: userId,
@@ -193,6 +197,8 @@ function parseHealthAutoExport(
         minutes: isRealValue(mins) ? mins : null,
         calories: isRealValue(cals) ? cals : null,
         start_time: w.start || null,
+        avg_heart_rate: avgHR,
+        max_heart_rate: maxHR,
       })
     }
   }
