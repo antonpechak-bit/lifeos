@@ -239,6 +239,211 @@ function InsightCard({ insight }) {
 // ── Avg helper ─────────────────────────────────────────────────
 const avg = (arr) => arr.length ? (arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1) : '—'
 
+// ── Analytics SVG helpers ──────────────────────────────────────
+
+const VALUE_COLORS = ['#C89EFF','#52FF9A','#6AA8FF','#FFB84D','#FF8FA3','#7FEFBD','#B18DFF','#FFD700']
+
+function AnalyticsLineChart({ points, labels, color, height = 80, showDots = true }) {
+  const W = 320, H = height, padX = 8, padY = 10
+  const w = W - padX * 2, h = H - padY * 2
+  const valid = points.filter(v => v != null) as number[]
+  const hasData = valid.length >= 2
+  const uid = color.replace(/[^a-zA-Z0-9]/g, 'x') + H
+
+  if (!hasData) {
+    return (
+      <div style={{ display: 'flex', gap: 3, alignItems: 'flex-end', height: H + 16, padding: `0 ${padX}px` }}>
+        {points.map((_, i) => (
+          <div key={i} style={{ flex: 1, height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.05)' }} />
+        ))}
+      </div>
+    )
+  }
+
+  const min = Math.min(...valid) - 0.3
+  const max = Math.max(...valid) + 0.3
+  const range = max - min || 1
+  const n = points.length
+
+  const coords = points.map((v, i) => {
+    if (v == null) return null
+    return [padX + (i / Math.max(n - 1, 1)) * w, padY + (1 - (v - min) / range) * h] as [number, number]
+  })
+
+  // Build line segments (skip nulls)
+  const segments: [number,number][][] = []
+  let seg: [number,number][] = []
+  for (let i = 0; i < coords.length; i++) {
+    if (coords[i]) { seg.push(coords[i]!) }
+    else if (seg.length) { segments.push(seg); seg = [] }
+  }
+  if (seg.length) segments.push(seg)
+
+  return (
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: H, overflow: 'visible' }}>
+        <defs>
+          <filter id={`alc-${uid}`} x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur stdDeviation="3.5" result="blur" />
+            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+        </defs>
+        {/* Grid */}
+        {[0.25, 0.5, 0.75].map((f, i) => (
+          <line key={i} x1={padX} y1={padY + f * h} x2={W - padX} y2={padY + f * h}
+            stroke="rgba(255,255,255,0.04)" strokeWidth="1" />
+        ))}
+        {/* Glow */}
+        {segments.map((s, si) => s.length >= 2 && (
+          <path key={`g${si}`} d={smoothPath(s)} fill="none" stroke={color}
+            strokeWidth="7" strokeLinecap="round" strokeLinejoin="round"
+            opacity="0.18" filter={`url(#alc-${uid})`} />
+        ))}
+        {/* Main line */}
+        {segments.map((s, si) => s.length >= 2 && (
+          <path key={`l${si}`} d={smoothPath(s)} fill="none" stroke={color}
+            strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.9" />
+        ))}
+        {showDots && coords.map((pt, i) => pt && n <= 15 && (
+          <circle key={i} cx={pt[0]} cy={pt[1]} r="3" fill={color}
+            style={{ filter: `drop-shadow(0 0 5px ${color})` }} />
+        ))}
+        {/* Latest value dot always */}
+        {(() => {
+          const last = coords.filter(Boolean).at(-1)
+          return last ? <circle cx={last[0]} cy={last[1]} r="4.5" fill={color}
+            style={{ filter: `drop-shadow(0 0 8px ${color})` }} /> : null
+        })()}
+      </svg>
+      {/* Labels */}
+      <div style={{ display: 'flex', padding: `0 ${padX}px`, marginTop: 4 }}>
+        {labels.map((lbl, i) => (
+          <div key={i} style={{ flex: 1, textAlign: 'center', fontSize: 9, color: s.muted,
+            opacity: lbl ? 1 : 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
+            {lbl}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function AnalyticsBarChart({ points, labels, color, maxVal }) {
+  const W = 320, H = 70, padX = 8, padY = 6
+  const n = points.length
+  const w = W - padX * 2
+  const barW = Math.max(2, w / n - 2)
+  const peak = maxVal || Math.max(...points, 1)
+  const barH = H - padY * 2
+
+  return (
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: H, overflow: 'visible' }}>
+        {points.map((v, i) => {
+          const bh = (v / peak) * barH
+          const x = padX + (i / n) * w + 1
+          const y = padY + barH - bh
+          return v > 0 ? (
+            <rect key={i} x={x} y={y} width={barW} height={bh} rx="2"
+              fill={color} opacity={0.75}
+              style={{ filter: `drop-shadow(0 0 4px ${color}80)` }} />
+          ) : (
+            <rect key={i} x={x} y={padY + barH - 3} width={barW} height={3} rx="1"
+              fill="rgba(255,255,255,0.06)" />
+          )
+        })}
+      </svg>
+      <div style={{ display: 'flex', padding: `0 ${padX}px`, marginTop: 2 }}>
+        {labels.map((lbl, i) => (
+          <div key={i} style={{ flex: 1, textAlign: 'center', fontSize: 9, color: s.muted,
+            opacity: lbl ? 1 : 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
+            {lbl}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function AnalyticsMultiLineChart({ series, labels }) {
+  const W = 320, H = 90, padX = 8, padY = 10
+  const w = W - padX * 2, h = H - padY * 2
+  const n = labels.length
+
+  const allVals = series.flatMap(s => s.points).filter(v => v != null) as number[]
+  if (allVals.length < 2) {
+    return (
+      <div style={{ textAlign: 'center', padding: '20px', color: s.muted, fontSize: 12 }}>
+        Недостаточно данных чекина по ценностям
+      </div>
+    )
+  }
+
+  const min = Math.min(...allVals) - 0.5
+  const max = Math.max(...allVals) + 0.5
+  const range = max - min || 1
+
+  return (
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: H, overflow: 'visible' }}>
+        <defs>
+          {series.map((ser, si) => (
+            <filter key={si} id={`mlc-${si}`} x="-60%" y="-60%" width="220%" height="220%">
+              <feGaussianBlur stdDeviation="3" result="blur" />
+              <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
+          ))}
+        </defs>
+        {[0.25, 0.5, 0.75].map((f, i) => (
+          <line key={i} x1={padX} y1={padY + f * h} x2={W - padX} y2={padY + f * h}
+            stroke="rgba(255,255,255,0.04)" strokeWidth="1" />
+        ))}
+        {series.map((ser, si) => {
+          const coords = ser.points.map((v, i) => {
+            if (v == null) return null
+            return [padX + (i / Math.max(n - 1, 1)) * w, padY + (1 - (v - min) / range) * h] as [number,number]
+          })
+          const segs: [number,number][][] = []
+          let seg: [number,number][] = []
+          for (const pt of coords) {
+            if (pt) seg.push(pt)
+            else if (seg.length) { segs.push(seg); seg = [] }
+          }
+          if (seg.length) segs.push(seg)
+
+          return segs.map((sg, sgi) => sg.length >= 2 ? (
+            <g key={`${si}-${sgi}`}>
+              <path d={smoothPath(sg)} fill="none" stroke={ser.color}
+                strokeWidth="6" strokeLinecap="round" strokeLinejoin="round"
+                opacity="0.15" filter={`url(#mlc-${si})`} />
+              <path d={smoothPath(sg)} fill="none" stroke={ser.color}
+                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
+            </g>
+          ) : null)
+        })}
+      </svg>
+      {/* Legend */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+        {series.map((ser, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <div style={{ width: 20, height: 2, background: ser.color, borderRadius: 1, boxShadow: `0 0 6px ${ser.color}` }} />
+            <span style={{ fontSize: 10, color: s.muted }}>{ser.name}</span>
+          </div>
+        ))}
+      </div>
+      {/* Labels */}
+      <div style={{ display: 'flex', padding: `4px ${padX}px 0`, marginTop: 2 }}>
+        {labels.map((lbl, i) => (
+          <div key={i} style={{ flex: 1, textAlign: 'center', fontSize: 9, color: s.muted,
+            opacity: lbl ? 1 : 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
+            {lbl}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Main content ───────────────────────────────────────────────
 function InsightsContent() {
   const router = useRouter()
@@ -253,6 +458,29 @@ function InsightsContent() {
   const [activeDim, setActiveDim] = useState('energy')
   const [periodSummaries, setPeriodSummaries] = useState<Record<string, any>>({})
   const [generatingPeriod, setGeneratingPeriod] = useState<string | null>(null)
+
+  // Analytics state
+  const [analyticsRange, setAnalyticsRange] = useState<'week'|'month'|'quarter'|'year'>('month')
+  const [analyticsData, setAnalyticsData] = useState<any>(null)
+  const [analyticsLoading, setAnalyticsLoading] = useState(false)
+
+  async function loadAnalytics(range: string) {
+    if (!user) return
+    setAnalyticsLoading(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token ?? ''
+      const res = await fetch(`/api/analytics?userId=${user.id}&range=${range}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.ok) setAnalyticsData(await res.json())
+    } catch (e) { console.error(e) }
+    setAnalyticsLoading(false)
+  }
+
+  useEffect(() => {
+    if (activeTab === 'analytics' && user) loadAnalytics(analyticsRange)
+  }, [activeTab, analyticsRange, user])
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }) => {
@@ -429,23 +657,25 @@ function InsightsContent() {
 
       <div style={{ maxWidth: 600, margin: '0 auto', padding: '22px 18px 0', display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-        {/* Tab bar */}
+        {/* Tab bar — horizontally scrollable to fit 5 tabs */}
         <div style={{
-          display: 'flex', gap: 2, padding: '5px',
+          overflowX: 'auto', scrollbarWidth: 'none',
           background: 'linear-gradient(155deg,rgba(255,255,255,0.055) 0%,rgba(255,255,255,0.02) 100%)',
           backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
           border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20,
           animation: 'fadeUp 0.45s ease forwards',
         }}>
-          {[['week', '📊 Неделя'], ['trends', '📈 Тренды'], ['history', '📋 История'], ['memory', '🔭 Память']].map(([t, l]) => (
-            <button key={t} onClick={() => setActiveTab(t)} style={{
-              flex: 1, padding: '9px 12px', borderRadius: 15, fontSize: 13, textAlign: 'center', cursor: 'pointer', border: 'none',
-              background: activeTab === t ? 'rgba(255,255,255,0.1)' : 'transparent',
-              color: activeTab === t ? s.text : s.muted,
-              fontWeight: activeTab === t ? 500 : 300,
-              transition: 'all 0.15s',
-            }}>{l}</button>
-          ))}
+          <div style={{ display: 'flex', gap: 2, padding: '5px', minWidth: 'max-content' }}>
+            {[['week','📊 Неделя'],['trends','📈 Тренды'],['analytics','📉 Аналитика'],['history','📋 История'],['memory','🔭 Память']].map(([t, l]) => (
+              <button key={t} onClick={() => setActiveTab(t)} style={{
+                padding: '9px 14px', borderRadius: 15, fontSize: 12, textAlign: 'center', cursor: 'pointer', border: 'none',
+                background: activeTab === t ? 'rgba(255,255,255,0.1)' : 'transparent',
+                color: activeTab === t ? s.text : s.muted,
+                fontWeight: activeTab === t ? 500 : 300,
+                transition: 'all 0.15s', whiteSpace: 'nowrap',
+              }}>{l}</button>
+            ))}
+          </div>
         </div>
 
         {/* ── НЕДЕЛЯ ── */}
@@ -554,6 +784,241 @@ function InsightsContent() {
                 <div style={{ fontSize: 13, color: s.dim, lineHeight: 1.75 }}>{currentWeekData.summary_text}</div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* ── АНАЛИТИКА ── */}
+        {activeTab === 'analytics' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, animation: 'fadeUp 0.3s forwards' }}>
+
+            {/* Range picker */}
+            <div style={{ display: 'flex', gap: 6 }}>
+              {([['week','Неделя'],['month','Месяц'],['quarter','Квартал'],['year','Год']] as const).map(([r, l]) => (
+                <button key={r} onClick={() => setAnalyticsRange(r)} style={{
+                  flex: 1, padding: '8px 4px', borderRadius: 12, border: 'none',
+                  background: analyticsRange === r ? s.energy : 'rgba(255,255,255,0.06)',
+                  color: analyticsRange === r ? '#07090D' : s.muted,
+                  fontSize: 12, fontWeight: analyticsRange === r ? 600 : 300,
+                  cursor: 'pointer', transition: 'all 0.15s',
+                  boxShadow: analyticsRange === r ? `0 0 20px ${s.energy}50` : 'none',
+                }}>{l}</button>
+              ))}
+            </div>
+
+            {analyticsLoading && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '40px 0' }}>
+                <div style={{ width: 22, height: 22, borderRadius: '50%', border: `2px solid rgba(255,255,255,0.08)`, borderTop: `2px solid ${s.energy}`, animation: 'spin 0.8s linear infinite' }} />
+                <span style={{ fontSize: 13, color: s.muted }}>Загружаю данные...</span>
+              </div>
+            )}
+
+            {!analyticsLoading && !analyticsData && (
+              <div style={{ textAlign: 'center', padding: '48px 20px', background: 'linear-gradient(155deg,rgba(255,255,255,0.055) 0%,rgba(255,255,255,0.015) 100%)', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: 28, color: s.muted, fontSize: 13 }}>
+                Начни заполнять чекины — здесь появятся твои тренды
+              </div>
+            )}
+
+            {!analyticsLoading && analyticsData && (() => {
+              const d = analyticsData
+              const labels: string[] = d.buckets.map((b: any) => b.label)
+              const hasWellbeing = d.wellbeing.some((v: any) => v != null)
+              const hasSteps     = d.steps.some((v: any) => v != null)
+              const hasSprints   = d.sprint_total.some((v: number) => v > 0)
+              const hasValues    = d.value_names.length > 0 && d.value_scores.some((vs: any[]) => vs.some(v => v != null))
+
+              const periodTypeMap = { week: null, month: 'month', quarter: 'quarter', year: 'year' } as const
+              const periodType = periodTypeMap[analyticsRange]
+              const periodSum  = periodType ? periodSummaries[periodType] : null
+              const weeklySum  = analyticsRange === 'week' ? summaries[0] : null
+
+              return (
+                <>
+                  {/* ── Wellbeing ─────────────────── */}
+                  {hasWellbeing ? (
+                    <div style={{
+                      background: `linear-gradient(155deg,${s.energy}0D 0%,rgba(255,255,255,0.02) 100%)`,
+                      backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
+                      border: `1px solid ${s.energy}22`, borderRadius: 28, padding: '20px 20px 14px',
+                      position: 'relative', overflow: 'hidden',
+                    }}>
+                      <div style={{ position: 'absolute', top: -30, right: -30, width: 120, height: 120, borderRadius: '50%', background: `radial-gradient(circle,${s.energy}18 0%,transparent 65%)`, pointerEvents: 'none' }} />
+                      <div style={{ fontSize: 11, color: s.energy, opacity: 0.8, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>🧬 Индекс благополучия</div>
+                      <div style={{ fontSize: 12, color: s.muted, marginBottom: 14 }}>
+                        Среднее: <span style={{ color: s.energy, fontWeight: 500 }}>
+                          {(() => { const v = d.wellbeing.filter((x: any) => x != null); return v.length ? (v.reduce((a: number,b: number) => a+b,0)/v.length).toFixed(1) : '—' })()}
+                        </span>
+                      </div>
+                      <AnalyticsLineChart points={d.wellbeing} labels={labels} color={s.energy} height={80} />
+                    </div>
+                  ) : (
+                    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px dashed rgba(255,255,255,0.08)', borderRadius: 20, padding: '20px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 11, color: s.energy, opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>🧬 Индекс благополучия</div>
+                      <div style={{ fontSize: 12, color: s.muted }}>Нет данных — заполни чекин</div>
+                    </div>
+                  )}
+
+                  {/* ── Активность (шаги) ─────────── */}
+                  {hasSteps ? (
+                    <div style={{
+                      background: `linear-gradient(155deg,${s.connection}0D 0%,rgba(255,255,255,0.02) 100%)`,
+                      backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
+                      border: `1px solid ${s.connection}22`, borderRadius: 28, padding: '20px 20px 14px',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <div style={{ fontSize: 11, color: s.connection, opacity: 0.8, textTransform: 'uppercase', letterSpacing: '0.1em' }}>🏃 Активность</div>
+                        <div style={{ display: 'flex', gap: 10, fontSize: 11, color: s.muted }}>
+                          <span>Шаги: <span style={{ color: s.connection }}>{(() => { const v = d.steps.filter((x: any) => x != null); return v.length ? Math.round(v.reduce((a: number,b: number) => a+b,0)/v.length).toLocaleString() : '—' })()}</span></span>
+                          <span>🏋️ <span style={{ color: s.recovery }}>{d.workouts.reduce((a: number,b: number) => a+b, 0)}</span></span>
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 12, color: s.muted, marginBottom: 14 }}>
+                        Тренировок за период: <span style={{ color: s.recovery, fontWeight: 500 }}>{d.workouts.reduce((a: number,b: number) => a+b, 0)}</span>
+                      </div>
+                      <AnalyticsBarChart
+                        points={d.steps.map((v: number|null) => v ? Math.round(v) : 0)}
+                        labels={labels}
+                        color={s.connection}
+                        maxVal={null}
+                      />
+                    </div>
+                  ) : (
+                    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px dashed rgba(255,255,255,0.08)', borderRadius: 20, padding: '20px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 11, color: s.connection, opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>🏃 Активность</div>
+                      <div style={{ fontSize: 12, color: s.muted }}>Нет данных о шагах</div>
+                    </div>
+                  )}
+
+                  {/* ── Спринты ───────────────────── */}
+                  {hasSprints ? (
+                    <div style={{
+                      background: `linear-gradient(155deg,${s.meaning}0D 0%,rgba(255,255,255,0.02) 100%)`,
+                      backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
+                      border: `1px solid ${s.meaning}22`, borderRadius: 28, padding: '20px 20px 14px',
+                    }}>
+                      <div style={{ fontSize: 11, color: s.meaning, opacity: 0.8, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>✓ Выполнение спринтов</div>
+                      <div style={{ fontSize: 12, color: s.muted, marginBottom: 14 }}>
+                        Всего выполнено: <span style={{ color: s.meaning, fontWeight: 500 }}>{d.sprint_done.reduce((a: number,b: number) => a+b, 0)}</span>
+                        {' '}из <span style={{ color: s.muted }}>{d.sprint_total.reduce((a: number,b: number) => a+b, 0)}</span> дней
+                      </div>
+                      <AnalyticsBarChart
+                        points={d.sprint_done}
+                        labels={labels}
+                        color={s.meaning}
+                        maxVal={Math.max(...d.sprint_total, 1)}
+                      />
+                    </div>
+                  ) : (
+                    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px dashed rgba(255,255,255,0.08)', borderRadius: 20, padding: '20px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 11, color: s.meaning, opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>✓ Спринты</div>
+                      <div style={{ fontSize: 12, color: s.muted }}>Нет чекинов по спринтам</div>
+                    </div>
+                  )}
+
+                  {/* ── Values alignment ──────────── */}
+                  {hasValues ? (
+                    <div style={{
+                      background: 'linear-gradient(155deg,rgba(200,158,255,0.08) 0%,rgba(255,255,255,0.02) 100%)',
+                      backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
+                      border: '1px solid rgba(200,158,255,0.2)', borderRadius: 28, padding: '20px 20px 14px',
+                    }}>
+                      <div style={{ fontSize: 11, color: '#C89EFF', opacity: 0.8, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>🧭 Ценности · alignment</div>
+                      <div style={{ fontSize: 12, color: s.muted, marginBottom: 14 }}>Средний балл по каждой ценности (1–10)</div>
+                      <AnalyticsMultiLineChart
+                        series={d.value_names.map((name: string, i: number) => ({
+                          name,
+                          color: VALUE_COLORS[i % VALUE_COLORS.length],
+                          points: d.value_scores[i],
+                        }))}
+                        labels={labels}
+                      />
+                    </div>
+                  ) : d.value_names.length > 0 ? (
+                    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px dashed rgba(255,255,255,0.08)', borderRadius: 20, padding: '20px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 11, color: '#C89EFF', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>🧭 Ценности</div>
+                      <div style={{ fontSize: 12, color: s.muted }}>Данные появятся после чекинов с оценкой ценностей</div>
+                    </div>
+                  ) : (
+                    <div
+                      onClick={() => router.push('/dashboard/values')}
+                      style={{ background: 'rgba(200,158,255,0.05)', border: '1px dashed rgba(200,158,255,0.2)', borderRadius: 20, padding: '18px 20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div>
+                        <div style={{ fontSize: 11, color: '#C89EFF', opacity: 0.7, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>🧭 Ценности</div>
+                        <div style={{ fontSize: 12, color: s.muted }}>Исследуй ценности, чтобы отслеживать alignment</div>
+                      </div>
+                      <span style={{ fontSize: 18, color: '#C89EFF' }}>→</span>
+                    </div>
+                  )}
+
+                  {/* ── Period summary card ────────── */}
+                  <div style={{
+                    background: 'linear-gradient(155deg,rgba(255,255,255,0.06) 0%,rgba(255,255,255,0.02) 100%)',
+                    backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
+                    border: '1px solid rgba(255,255,255,0.09)', borderRadius: 28, padding: '20px 22px',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: periodSum || weeklySum ? 14 : 0 }}>
+                      <div style={{ fontSize: 11, color: s.muted, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                        {analyticsRange === 'week' ? '📋 Итог недели' : analyticsRange === 'month' ? '📅 Итог месяца' : analyticsRange === 'quarter' ? '🗓 Итог квартала' : '🌀 Итог года'}
+                      </div>
+                      {periodType && (
+                        <button
+                          onClick={() => generatePeriod(periodType)}
+                          disabled={!!generatingPeriod}
+                          style={{
+                            fontSize: 11, padding: '6px 12px', borderRadius: 999,
+                            background: generatingPeriod === periodType ? 'rgba(255,255,255,0.04)' : `${s.mood}18`,
+                            border: `1px solid ${generatingPeriod === periodType ? 'rgba(255,255,255,0.08)' : `${s.mood}35`}`,
+                            color: generatingPeriod === periodType ? s.muted : s.mood,
+                            cursor: generatingPeriod ? 'not-allowed' : 'pointer',
+                            display: 'flex', alignItems: 'center', gap: 5,
+                          }}>
+                          {generatingPeriod === periodType
+                            ? <><span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>◌</span> Синтез...</>
+                            : periodSum ? '↺ Обновить' : '✦ Синтезировать'}
+                        </button>
+                      )}
+                    </div>
+
+                    {weeklySum && analyticsRange === 'week' && (
+                      <div style={{ fontSize: 13, color: s.dim, lineHeight: 1.8 }}>
+                        {weeklySum.summary_text || 'Итог недели не сгенерирован.'}
+                        {weeklySum.top_correlation && (
+                          <div style={{ marginTop: 10, fontSize: 12, color: s.muted, borderLeft: '2px solid rgba(255,255,255,0.12)', paddingLeft: 12 }}>
+                            Паттерн: {weeklySum.top_correlation}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {periodSum && periodType && (
+                      <div>
+                        <div style={{ fontSize: 13, color: s.dim, lineHeight: 1.8, marginBottom: 10 }}>{periodSum.summary_text}</div>
+                        {periodSum.key_themes?.length > 0 && (
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+                            {periodSum.key_themes.map((t: string, i: number) => (
+                              <span key={i} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 999, background: `${s.mood}12`, color: s.mood, border: `1px solid ${s.mood}28` }}>{t}</span>
+                            ))}
+                          </div>
+                        )}
+                        {periodSum.central_obs && (
+                          <div style={{ fontSize: 12, color: s.mood, fontStyle: 'italic', borderLeft: `2px solid ${s.mood}40`, paddingLeft: 12, lineHeight: 1.6 }}>
+                            {periodSum.central_obs}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {!weeklySum && !periodSum && (
+                      <div style={{ fontSize: 12, color: s.muted, marginTop: 8 }}>
+                        {analyticsRange === 'week'
+                          ? 'Нажми «Анализ недели» наверху чтобы сгенерировать итог'
+                          : 'Нажми «Синтезировать» чтобы создать текстовый итог периода'}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )
+            })()}
+
           </div>
         )}
 
