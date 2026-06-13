@@ -52,53 +52,85 @@ function yearPeriod(date: Date) {
 
 // ── System prompts per level ──────────────────────────────────
 
-const MONTH_SYSTEM = `Ты синтезируешь память о прошедшем месяце на основе еженедельных итогов и данных. Твой язык — русский. Стиль: феноменологический, без предписаний.
+// Shared epistemic rule injected into every prompt
+const EPISTEMIC_RULE = `
+ПРАВИЛО УВЕРЕННОСТИ (обязательно):
+Уверенность в наблюдении пропорциональна числу подтверждений:
+— 1 период данных или новый паттерн без предыдущих аналогов → confidence = "hypothesis". Формулировки: "Похоже, что...", "Заметен паттерн, который стоит понаблюдать...", "Это может быть совпадением одной недели/месяца, но...". Заканчивай 1-2 феноменологическими вопросами в духе гештальта (не советы — приглашение посмотреть).
+— Паттерн встречается в 2-3 периодах подряд → confidence = "pattern". Можно говорить увереннее: "Уже второй месяц подряд...", "Устойчивая связь между...". Всё равно без директивных советов — только описание закономерности + вопрос к человеку, что он сам об этом думает.
+— Паттерн подтверждён 3+ периодами → confidence = "established". Утверждения допустимы, но по-прежнему без "надо делать X".
+Если в тексте встречаются несколько паттернов с разной уверенностью — бери наиболее частый/центральный для итогового confidence.`
+
+const MONTH_SYSTEM = `Ты синтезируешь память о прошедшем месяце на основе еженедельных итогов. Твой язык — русский. Стиль: феноменологический, без предписаний.
+${EPISTEMIC_RULE}
 
 Найди 2-3 тематические нити, которые шли сквозь несколько недель:
 — Что нарастало? Что угасало? Что было стабильным?
 — Где был сдвиг — и что ему предшествовало?
 — Что говорят спринт-данные о последовательности?
 
+Если предоставлены предыдущие месячные итоги — сверь: встречались ли схожие паттерны раньше? Отметь это и скорректируй confidence.
+
 ФОРМАТ (строго JSON, без markdown):
 {
-  "summary_text": "2-4 предложения — живая картина месяца, без клише",
+  "summary_text": "2-4 предложения — живая картина месяца, без клише. Тон определяется confidence",
   "key_themes": ["тема 1", "тема 2", "тема 3"],
-  "central_obs": "одно предложение — самое важное наблюдение о месяце"
+  "central_obs": "одно предложение — ключевое наблюдение (с маркером уверенности в тоне)",
+  "open_questions": ["вопрос 1", "вопрос 2"],
+  "confidence": "hypothesis|pattern|established"
 }`
 
-const QUARTER_SYSTEM = `Ты синтезируешь память о квартале на основе трёх месячных итогов. Твой язык — русский. Смотри с высоты — ищи арки и траектории, не события.
+const QUARTER_SYSTEM = `Ты синтезируешь память о квартале на основе месячных итогов. Твой язык — русский. Смотри с высоты — ищи арки и траектории.
+${EPISTEMIC_RULE}
 
 — Какова была дуга квартала? Что трансформировалось?
-— Какие темы красной нитью шли через все три месяца?
+— Какие темы красной нитью шли через все месяцы?
 — Что завершилось? Что открылось?
+
+Если предоставлены предыдущие квартальные итоги — сверь повторяющиеся темы и обнови confidence.
 
 ФОРМАТ (строго JSON, без markdown):
 {
   "summary_text": "2-4 предложения — дуга квартала, с динамикой",
   "key_themes": ["тема 1", "тема 2"],
-  "central_obs": "одно предложение — суть квартала"
+  "central_obs": "одно предложение — суть квартала",
+  "open_questions": ["вопрос 1"],
+  "confidence": "hypothesis|pattern|established"
 }`
 
 const YEAR_SYSTEM = `Ты синтезируешь память о годе на основе квартальных итогов. Твой язык — русский. Смотри с предельной высоты — ищи трансформацию.
+${EPISTEMIC_RULE}
 
 — Кем был этот человек в начале года? Кем стал?
 — Что трансформировалось необратимо?
 — Одна метафора или образ для года.
 
+Если есть предыдущий годовой итог — обозначь, что изменилось в паттернах между годами.
+
 ФОРМАТ (строго JSON, без markdown):
 {
   "summary_text": "3-5 предложений — история года, с образом трансформации",
   "key_themes": ["тема 1", "тема 2", "тема 3"],
-  "central_obs": "одна метафора или образ для года"
+  "central_obs": "одна метафора или образ для года",
+  "open_questions": ["вопрос 1"],
+  "confidence": "hypothesis|pattern|established"
 }`
 
 // ── Generators ─────────────────────────────────────────────────
 
+function formatPrevSummary(ps: any): string {
+  return `### ${ps.label || ps.period_start}
+${ps.summary_text}
+Темы: ${(ps.key_themes || []).join(', ')}
+Суть: ${ps.central_obs || '—'}
+Уверенность: ${ps.metrics?.confidence || '—'}`
+}
+
 async function generateMonth(userId: string, periodStart: string, periodEnd: string) {
-  const [weekliesRes, checkinsRes, insightsRes] = await Promise.all([
+  const [weekliesRes, checkinsRes, insightsRes, prevMonthsRes] = await Promise.all([
     supabaseAdmin
       .from('weekly_summaries')
-      .select('week_start, week_end, summary_text, top_correlation, biggest_barrier, next_focus, avg_energy, avg_mood, avg_meaning, avg_connection, sprint_completion_rate')
+      .select('week_start, week_end, summary_text, top_correlation, biggest_barrier, avg_energy, avg_mood, avg_meaning, avg_connection, sprint_completion_rate')
       .eq('user_id', userId)
       .gte('week_start', periodStart)
       .lte('week_end', periodEnd)
@@ -118,11 +150,21 @@ async function generateMonth(userId: string, periodStart: string, periodEnd: str
       .lte('created_at', `${periodEnd}T23:59:59`)
       .order('created_at', { ascending: false })
       .limit(10),
+    // 2 previous month summaries for pattern comparison
+    supabaseAdmin
+      .from('period_summaries')
+      .select('period_start, label, summary_text, key_themes, central_obs, metrics')
+      .eq('user_id', userId)
+      .eq('period_type', 'month')
+      .lt('period_start', periodStart)
+      .order('period_start', { ascending: false })
+      .limit(2),
   ])
 
-  const weeklies = weekliesRes.data || []
-  const checkins = checkinsRes.data || []
-  const insights = insightsRes.data || []
+  const weeklies   = weekliesRes.data || []
+  const checkins   = checkinsRes.data || []
+  const insights   = insightsRes.data || []
+  const prevMonths = (prevMonthsRes.data || []).reverse() // chronological
 
   const avg = (arr: number[]) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null
   const doneCount  = checkins.filter(c => c.completed).length
@@ -137,63 +179,96 @@ async function generateMonth(userId: string, periodStart: string, periodEnd: str
     avg_connection: avg(checkins.filter(c => c.connection).map(c => c.connection)),
   }
 
+  const prevSection = prevMonths.length > 0
+    ? `\nПРЕДЫДУЩИЕ МЕСЯЧНЫЕ ИТОГИ (для сравнения паттернов):\n${prevMonths.map(formatPrevSummary).join('\n\n')}`
+    : '\nПРЕДЫДУЩИЕ МЕСЯЧНЫЕ ИТОГИ: нет (первое наблюдение — все паттерны считать гипотезами).'
+
   const content = `Период: ${periodStart} — ${periodEnd}
 Спринт-завершения: ${doneCount}/${totalCount} (${metrics.sprint_completion ?? '—'}%)
 Средние: энергия ${metrics.avg_energy?.toFixed(1) ?? '—'}, настроение ${metrics.avg_mood?.toFixed(1) ?? '—'}, смысл ${metrics.avg_meaning?.toFixed(1) ?? '—'}, связь ${metrics.avg_connection?.toFixed(1) ?? '—'}
 
-ЕЖЕНЕДЕЛЬНЫЕ ИТОГИ:
+ЕЖЕНЕДЕЛЬНЫЕ ИТОГИ (${weeklies.length} нед.):
 ${weeklies.map(w => `[${w.week_start}] ${w.summary_text || ''} | Корреляция: ${w.top_correlation || '—'} | Барьер: ${w.biggest_barrier || '—'}`).join('\n') || 'Нет еженедельных итогов.'}
 
 НАБЛЮДЕНИЯ ЗА МЕСЯЦ:
-${insights.map(i => `- [слой ${i.layer}] ${i.content}`).join('\n') || 'Нет сохранённых наблюдений.'}`
+${insights.map(i => `- [слой ${i.layer}] ${i.content}`).join('\n') || 'Нет сохранённых наблюдений.'}
+${prevSection}`
 
   return { content, metrics }
 }
 
 async function generateQuarter(userId: string, periodStart: string, periodEnd: string) {
-  const { data: months } = await supabaseAdmin
-    .from('period_summaries')
-    .select('period_start, period_end, label, summary_text, key_themes, central_obs')
-    .eq('user_id', userId)
-    .eq('period_type', 'month')
-    .gte('period_start', periodStart)
-    .lte('period_end', periodEnd)
-    .order('period_start')
+  const [monthsRes, prevQuartersRes] = await Promise.all([
+    supabaseAdmin
+      .from('period_summaries')
+      .select('period_start, period_end, label, summary_text, key_themes, central_obs, metrics')
+      .eq('user_id', userId)
+      .eq('period_type', 'month')
+      .gte('period_start', periodStart)
+      .lte('period_end', periodEnd)
+      .order('period_start'),
+    // 2 previous quarters for comparison
+    supabaseAdmin
+      .from('period_summaries')
+      .select('period_start, label, summary_text, key_themes, central_obs, metrics')
+      .eq('user_id', userId)
+      .eq('period_type', 'quarter')
+      .lt('period_start', periodStart)
+      .order('period_start', { ascending: false })
+      .limit(2),
+  ])
+
+  const months      = monthsRes.data || []
+  const prevQuarters = (prevQuartersRes.data || []).reverse()
+
+  const prevSection = prevQuarters.length > 0
+    ? `\nПРЕДЫДУЩИЕ КВАРТАЛЬНЫЕ ИТОГИ (для сравнения):\n${prevQuarters.map(formatPrevSummary).join('\n\n')}`
+    : '\nПРЕДЫДУЩИЕ КВАРТАЛЬНЫЕ ИТОГИ: нет.'
 
   const content = `Период: ${periodStart} — ${periodEnd}
 
 МЕСЯЧНЫЕ ИТОГИ:
-${(months || []).map(m =>
-  `### ${m.label} (${m.period_start})
-${m.summary_text}
-Темы: ${(m.key_themes || []).join(', ')}
-Суть: ${m.central_obs || '—'}`
-).join('\n\n') || 'Нет месячных итогов.'}`
+${months.map(formatPrevSummary).join('\n\n') || 'Нет месячных итогов.'}
+${prevSection}`
 
-  return { content, metrics: { months_available: (months || []).length } }
+  return { content, metrics: { months_available: months.length } }
 }
 
 async function generateYear(userId: string, periodStart: string, periodEnd: string) {
-  const { data: quarters } = await supabaseAdmin
-    .from('period_summaries')
-    .select('period_start, period_end, label, summary_text, key_themes, central_obs')
-    .eq('user_id', userId)
-    .eq('period_type', 'quarter')
-    .gte('period_start', periodStart)
-    .lte('period_end', periodEnd)
-    .order('period_start')
+  const [quartersRes, prevYearRes] = await Promise.all([
+    supabaseAdmin
+      .from('period_summaries')
+      .select('period_start, period_end, label, summary_text, key_themes, central_obs, metrics')
+      .eq('user_id', userId)
+      .eq('period_type', 'quarter')
+      .gte('period_start', periodStart)
+      .lte('period_end', periodEnd)
+      .order('period_start'),
+    // Previous year for comparison
+    supabaseAdmin
+      .from('period_summaries')
+      .select('period_start, label, summary_text, key_themes, central_obs, metrics')
+      .eq('user_id', userId)
+      .eq('period_type', 'year')
+      .lt('period_start', periodStart)
+      .order('period_start', { ascending: false })
+      .limit(1),
+  ])
+
+  const quarters = quartersRes.data || []
+  const prevYear = prevYearRes.data?.[0]
+
+  const prevSection = prevYear
+    ? `\nПРЕДЫДУЩИЙ ГОДОВОЙ ИТОГ (для сравнения):\n${formatPrevSummary(prevYear)}`
+    : '\nПРЕДЫДУЩИЙ ГОДОВОЙ ИТОГ: нет.'
 
   const content = `Год: ${periodStart.slice(0, 4)}
 
 КВАРТАЛЬНЫЕ ИТОГИ:
-${(quarters || []).map(q =>
-  `### ${q.label}
-${q.summary_text}
-Темы: ${(q.key_themes || []).join(', ')}
-Суть: ${q.central_obs || '—'}`
-).join('\n\n') || 'Нет квартальных итогов.'}`
+${quarters.map(formatPrevSummary).join('\n\n') || 'Нет квартальных итогов.'}
+${prevSection}`
 
-  return { content, metrics: { quarters_available: (quarters || []).length } }
+  return { content, metrics: { quarters_available: quarters.length } }
 }
 
 // ── Route ──────────────────────────────────────────────────────
@@ -246,11 +321,24 @@ export async function POST(req: NextRequest) {
     })
 
     const raw = response.content[0].type === 'text' ? response.content[0].text : '{}'
-    let parsed: { summary_text: string; key_themes: string[]; central_obs: string }
+    let parsed: {
+      summary_text: string
+      key_themes: string[]
+      central_obs: string
+      open_questions?: string[]
+      confidence?: 'hypothesis' | 'pattern' | 'established'
+    }
     try {
       parsed = JSON.parse(raw.replace(/```json|```/g, '').trim())
     } catch {
-      parsed = { summary_text: raw.trim(), key_themes: [], central_obs: '' }
+      parsed = { summary_text: raw.trim(), key_themes: [], central_obs: '', confidence: 'hypothesis' }
+    }
+
+    // Merge confidence into metrics so it's stored without schema change
+    const fullMetrics = {
+      ...metrics,
+      confidence: parsed.confidence || 'hypothesis',
+      open_questions: parsed.open_questions || [],
     }
 
     // Upsert into period_summaries
@@ -266,7 +354,7 @@ export async function POST(req: NextRequest) {
           summary_text: parsed.summary_text,
           key_themes:   parsed.key_themes || [],
           central_obs:  parsed.central_obs || null,
-          metrics,
+          metrics:      fullMetrics,
           updated_at:   new Date().toISOString(),
         },
         { onConflict: 'user_id,period_type,period_start' }
@@ -277,7 +365,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       period: { periodType, periodStart, periodEnd, label },
       summary: parsed,
-      metrics,
+      metrics: fullMetrics,
       id: saved?.id,
     })
   } catch (error) {

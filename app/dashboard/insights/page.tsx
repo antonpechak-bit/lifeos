@@ -718,6 +718,15 @@ function InsightsContent() {
               const typeColor = type === 'month' ? s.energy : type === 'quarter' ? s.mood : s.connection
               const typeIcon  = type === 'month' ? '📅' : type === 'quarter' ? '🗓' : '🌀'
 
+              const confidence = ps?.metrics?.confidence
+              const confidenceBadge =
+                confidence === 'established' ? { icon: '✅', label: 'устойчиво',  color: s.meaning } :
+                confidence === 'pattern'     ? { icon: '📊', label: 'паттерн',    color: s.connection } :
+                confidence === 'hypothesis'  ? { icon: '🔍', label: 'гипотеза',   color: s.muted } :
+                null
+
+              const openQuestions: string[] = ps?.metrics?.open_questions || []
+
               return (
                 <div key={type} style={{
                   background: ps
@@ -734,7 +743,19 @@ function InsightsContent() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 16 }}>{typeIcon}</span>
                       <div>
-                        <div style={{ fontSize: 13, fontWeight: 500, color: s.text }}>{typeLabel}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontSize: 13, fontWeight: 500, color: s.text }}>{typeLabel}</span>
+                          {confidenceBadge && (
+                            <span style={{
+                              fontSize: 10, padding: '2px 7px', borderRadius: 999,
+                              background: `${confidenceBadge.color}15`,
+                              border: `1px solid ${confidenceBadge.color}30`,
+                              color: confidenceBadge.color,
+                            }}>
+                              {confidenceBadge.icon} {confidenceBadge.label}
+                            </span>
+                          )}
+                        </div>
                         {ps?.label && <div style={{ fontSize: 10, color: s.muted, marginTop: 1 }}>{ps.label}</div>}
                       </div>
                     </div>
@@ -777,9 +798,23 @@ function InsightsContent() {
                         <div style={{
                           fontSize: 12, color: typeColor, fontStyle: 'italic',
                           borderLeft: `2px solid ${typeColor}40`, paddingLeft: 12,
-                          lineHeight: 1.6,
+                          lineHeight: 1.6, marginBottom: openQuestions.length > 0 ? 12 : 0,
                         }}>
                           {ps.central_obs}
+                        </div>
+                      )}
+                      {openQuestions.length > 0 && (
+                        <div style={{
+                          marginTop: 10, padding: '10px 14px', borderRadius: 14,
+                          background: 'rgba(255,255,255,0.03)',
+                          border: '1px solid rgba(255,255,255,0.07)',
+                        }}>
+                          <div style={{ fontSize: 10, color: s.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Вопросы для исследования</div>
+                          {openQuestions.map((q, i) => (
+                            <div key={i} style={{ fontSize: 12, color: s.dim, lineHeight: 1.65, marginBottom: i < openQuestions.length - 1 ? 6 : 0 }}>
+                              — {q}
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>
