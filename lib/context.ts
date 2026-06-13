@@ -30,6 +30,24 @@ export interface HealthTrends {
   recent_days: { date: string; sleep_hours: number | null; hrv: number | null; steps: number | null; resting_heart_rate: number | null }[]
 }
 
+export interface ClientInsight {
+  id: string
+  created_at: string
+  source: string | null
+  layer: number | null
+  category: string | null
+  content: string
+  related_sprint_id: string | null
+  status: string
+}
+
+export interface LayerStatus {
+  layer: number
+  status: string
+  last_checked: string | null
+  notes: string | null
+}
+
 export interface UserContext {
   state_map: string | null
   active_sprints: any[]
@@ -40,6 +58,8 @@ export interface UserContext {
   active_recommendations: any[]
   health_trends: HealthTrends
   activity_analysis: ActivityAnalysis
+  client_insights: ClientInsight[]
+  layer_statuses: LayerStatus[]
 }
 
 // ─── Оценка статуса биомаркера по ref_min/ref_max из данных ──
@@ -147,6 +167,8 @@ export async function getUserContext(userId: string): Promise<UserContext> {
     recommendationsRes,
     dailyLogsRes,
     workoutsRes,
+    clientInsightsRes,
+    layerStatusRes,
   ] = await Promise.all([
     // Последняя завершённая сессия с State Map
     supabaseAdmin
@@ -215,6 +237,21 @@ export async function getUserContext(userId: string): Promise<UserContext> {
       .eq('user_id', userId)
       .gte('date', thirtyDaysAgoStr)
       .order('date', { ascending: false }),
+
+    // Active client insights — last 20
+    supabaseAdmin
+      .from('client_insights')
+      .select('id, created_at, source, layer, category, content, related_sprint_id, status')
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .limit(20),
+
+    // Layer statuses
+    supabaseAdmin
+      .from('layer_status')
+      .select('layer, status, last_checked, notes')
+      .eq('user_id', userId),
   ])
 
   const healthRows = healthRes.data || []
@@ -264,10 +301,22 @@ export async function getUserContext(userId: string): Promise<UserContext> {
     active_recommendations: recommendationsRes.data || [],
     health_trends: calcHealthTrends(dailyLogs),
     activity_analysis: analyzeActivity(dailyLogs, workouts),
+    client_insights: (clientInsightsRes.data || []) as ClientInsight[],
+    layer_statuses: (layerStatusRes.data || []) as LayerStatus[],
   }
 }
 
 // ─── Форматирование контекста в текст для промпта ─────────────
+
+const LAYER_NAMES: Record<number, string> = {
+  1: 'Телесная основа',
+  2: 'Безопасность / ВНС',
+  3: 'Связь',
+  4: 'Внимание',
+  5: 'Ценности',
+  6: 'Смысл',
+  7: 'Трансценденция',
+}
 
 export function formatContextForPrompt(ctx: UserContext): string {
   const parts: string[] = []
@@ -358,6 +407,44 @@ export function formatContextForPrompt(ctx: UserContext): string {
       `- Тренировки за неделю: ${ht.workouts_7d}${ht.workouts_7d_types.length > 0 ? ` (типы: ${ht.workouts_7d_types.join(', ')})` : ''}`,
     ]
     parts.push(`## Данные с носимых устройств (последние 7 дней)\n${wLines.join('\n')}`)
+  }
+
+  if (ctx.client_insights.length > 0) {
+    const byLayer: Record<string, ClientInsight[]> = {}
+    for (const insight of ctx.client_insights) {
+      const key = insight.layer != null ? String(insight.layer) : 'other'
+      if (!byLayer[key]) byLayer[key] = []
+      byLayer[key].push(insight)
+    }
+    const insightLines: string[] = []
+    for (const [layerKey, insights] of Object.entries(byLayer).sort()) {
+      const layerNum = parseInt(layerKey)
+      const layerLabel = !isNaN(layerNum)
+        ? `Слой ${layerNum}${LAYER_NAMES[layerNum] ? ` (${LAYER_NAMES[layerNum]})` : ''}`
+        : 'Без слоя'
+      insightLines.push(`### ${layerLabel}`)
+      for (const ins of insights) {
+        insightLines.push(`- ${ins.content}`)
+      }
+    }
+    parts.push(`## Накопленные наблюдения\n${insightLines.join('\n')}`)
+  }
+
+  if (ctx.layer_statuses.length > 0) {
+    const now = new Date()
+    const statusLines = [...ctx.layer_statuses]
+      .sort((a, b) => a.layer - b.layer)
+      .map(ls => {
+        const name = LAYER_NAMES[ls.layer] ? ` (${LAYER_NAMES[ls.layer]})` : ''
+        let daysAgo = '—'
+        if (ls.last_checked) {
+          const days = Math.round((now.getTime() - new Date(ls.last_checked).getTime()) / 86400000)
+          daysAgo = `${days} дн. назад`
+        }
+        const notes = ls.notes ? `, заметки: ${ls.notes}` : ''
+        return `- Слой ${ls.layer}${name}: ${ls.status}, последняя проверка: ${daysAgo}${notes}`
+      })
+    parts.push(`## Состояние по слоям\n${statusLines.join('\n')}`)
   }
 
   return parts.join('\n\n')
