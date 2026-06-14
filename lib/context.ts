@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { createClient } from '@supabase/supabase-js'
 import { analyzeActivity, ActivityAnalysis, WorkoutRow } from './activity-analysis'
+import { computeDrift, DriftSignal } from './drift'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -82,6 +83,7 @@ export interface UserContext {
   layer_statuses: LayerStatus[]
   period_summaries: PeriodSummary[]
   user_values: UserValue[]
+  drift_signal: DriftSignal
 }
 
 // ─── Оценка статуса биомаркера по ref_min/ref_max из данных ──
@@ -180,9 +182,9 @@ export async function getUserContext(userId: string): Promise<UserContext> {
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
   const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().slice(0, 10)
 
-  const fourteenDaysAgo = new Date()
-  fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14)
-  const fourteenDaysAgoStr = fourteenDaysAgo.toISOString().slice(0, 10)
+  const twentyOneDaysAgo = new Date()
+  twentyOneDaysAgo.setDate(twentyOneDaysAgo.getDate() - 21)
+  const twentyOneDaysAgoStr = twentyOneDaysAgo.toISOString().slice(0, 10)
 
   const [
     sessionRes,
@@ -298,12 +300,13 @@ export async function getUserContext(userId: string): Promise<UserContext> {
       .eq('user_id', userId)
       .order('created_at'),
 
-    // Value checkins — last 14 days for alignment score computation
+    // Value checkins — last 21 days for alignment + drift computation
     supabaseAdmin
       .from('value_checkins')
-      .select('value_id, score')
+      .select('value_id, score, date')
       .eq('user_id', userId)
-      .gte('date', fourteenDaysAgoStr),
+      .gte('date', twentyOneDaysAgoStr)
+      .order('date'),
   ])
 
   const healthRows = healthRes.data || []
@@ -354,6 +357,16 @@ export async function getUserContext(userId: string): Promise<UserContext> {
     return { ...v, alignment_score: alignmentScore }
   })
 
+  const layerStatuses = (layerStatusRes.data || []) as LayerStatus[]
+
+  const drift_signal = computeDrift({
+    userValues: rawValues,
+    valueCheckins,
+    dailyLogs,
+    layerStatuses,
+    windowDays: 21,
+  })
+
   return {
     state_map: sessionRes.data?.state_map || null,
     active_sprints: sprintsRes.data || [],
@@ -365,9 +378,10 @@ export async function getUserContext(userId: string): Promise<UserContext> {
     health_trends: calcHealthTrends(dailyLogs),
     activity_analysis: analyzeActivity(dailyLogs, workouts),
     client_insights: (clientInsightsRes.data || []) as ClientInsight[],
-    layer_statuses: (layerStatusRes.data || []) as LayerStatus[],
+    layer_statuses: layerStatuses,
     period_summaries: (periodSummariesRes.data || []) as PeriodSummary[],
     user_values: userValues,
+    drift_signal,
   }
 }
 
@@ -519,7 +533,18 @@ export function formatContextForPrompt(ctx: UserContext): string {
       const op = v.operationalization ? ` — ${v.operationalization.replace(/\n/g, '; ')}` : ''
       return `- ${v.value_name}${layer}${score}${op}`
     })
-    parts.push(`## Ценности и alignment (14 дней)\n${valueLines.join('\n')}`)
+    parts.push(`## Ценности и alignment (21 день)\n${valueLines.join('\n')}`)
+  }
+
+  if (ctx.drift_signal?.detected) {
+    const d = ctx.drift_signal
+    const valStr = d.weakest_values.map(v => `${v.value_name} (${v.score}/10)`).join(', ')
+    parts.push(
+      `## Сигнал дрейфа (21 день)\n` +
+      `Performance стабилен (→ ${d.performance_trend}/100), alignment падает (${d.alignment_trend}/100). Разрыв: ${d.gap} пп. ` +
+      `Слабее всего: ${valStr || '—'}.\n` +
+      `Поднять мягко как наблюдение + феноменологический вопрос, если уместно по ходу разговора — не как диагноз.`
+    )
   }
 
   if (ctx.period_summaries.length > 0) {

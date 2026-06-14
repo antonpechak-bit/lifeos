@@ -283,6 +283,83 @@ function SprintCard({ sprint, checkins, today, router }) {
   )
 }
 
+// ── Drift Card ─────────────────────────────────────────────────
+const DRIFT_COLOR = '#C4A46B'  // muted amber — warm, not alarming
+
+function DriftCard({ signal, router }) {
+  if (!signal?.detected) return null
+
+  return (
+    <div style={{
+      background:  `linear-gradient(155deg,rgba(196,164,107,0.07) 0%,rgba(255,255,255,0.02) 100%)`,
+      backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
+      borderRadius: 28, padding: '20px 20px 18px',
+      border: `1px solid rgba(196,164,107,0.16)`,
+      position: 'relative', overflow: 'hidden',
+      animation: 'fadeUp 0.75s ease forwards',
+    }}>
+      {/* subtle background orb */}
+      <div style={{
+        position: 'absolute', bottom: -40, right: -40,
+        width: 160, height: 160, borderRadius: '50%',
+        background: `radial-gradient(circle,rgba(196,164,107,0.12) 0%,transparent 65%)`,
+        animation: 'orbFloat 10s ease-in-out infinite',
+        pointerEvents: 'none',
+      }} />
+
+      {/* header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, position: 'relative' }}>
+        <div style={{ width: 6, height: 6, borderRadius: '50%', background: DRIFT_COLOR, opacity: 0.65, flexShrink: 0 }} />
+        <div style={{ fontSize: 11, color: DRIFT_COLOR, opacity: 0.72, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+          Наблюдение · {signal.window_days} дней
+        </div>
+      </div>
+
+      {/* observation text */}
+      <p style={{ fontSize: 14, color: 'rgba(242,240,234,0.62)', lineHeight: 1.75, marginBottom: 10, position: 'relative' }}>
+        {signal.observation}
+      </p>
+
+      {/* question */}
+      {signal.question && (
+        <p style={{ fontSize: 13, color: `${DRIFT_COLOR}B0`, lineHeight: 1.65, fontStyle: 'italic', marginBottom: 16, position: 'relative' }}>
+          {signal.question}
+        </p>
+      )}
+
+      {/* weakest values chips */}
+      {signal.weakest_values?.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16, position: 'relative' }}>
+          {signal.weakest_values.map((v, i) => (
+            <div key={i} style={{
+              fontSize: 11, borderRadius: 999, padding: '4px 10px',
+              background: `rgba(196,164,107,0.09)`,
+              border: `1px solid rgba(196,164,107,0.18)`,
+              color: DRIFT_COLOR, opacity: 0.85,
+            }}>
+              {v.value_name} · {v.score}/10
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* CTA */}
+      <button
+        onClick={() => router.push('/dashboard/values')}
+        style={{
+          fontSize: 12, color: DRIFT_COLOR,
+          background: `rgba(196,164,107,0.08)`,
+          border: `1px solid rgba(196,164,107,0.18)`,
+          borderRadius: 999, padding: '8px 16px',
+          cursor: 'pointer', position: 'relative',
+        }}
+      >
+        Исследовать ценности →
+      </button>
+    </div>
+  )
+}
+
 // ── Activity Card ──────────────────────────────────────────────
 const ACTIVITY_COLOR = '#FFB84D'
 
@@ -428,6 +505,7 @@ export default function Dashboard() {
   const [checkins, setCheckins]       = useState([])
   const [loading, setLoading]         = useState(true)
   const [showHistory, setShowHistory] = useState(false)
+  const [driftSignal, setDriftSignal] = useState(null)
 
   const today = new Date().toISOString().split('T')[0]
 
@@ -471,6 +549,12 @@ export default function Dashboard() {
         setWorkouts(wkts || [])
         setTodayLog(todayLogData || null)
         setCheckins(checkData || [])
+
+        // Drift signal — non-blocking, loads after main data
+        fetch(`/api/drift?userId=${u.id}`)
+          .then(r => r.json())
+          .then(data => { if (data?.detected) setDriftSignal(data) })
+          .catch(() => {})
       } catch (e) {
         console.error('Dashboard load error:', e)
       } finally {
@@ -778,6 +862,9 @@ export default function Dashboard() {
 
             {/* ── ACTIVITY CARD ─────────────────────────────── */}
             <ActivityCard analysis={activityAnalysis} router={router} />
+
+            {/* ── DRIFT CARD ────────────────────────────────── */}
+            <DriftCard signal={driftSignal} router={router} />
 
             {/* ── ACTIVE SPRINTS ────────────────────────────── */}
             {activeSprints.length > 0 && (
