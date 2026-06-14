@@ -3,5 +3,8 @@
     "app/api/parse-labs/route.ts": {
       "maxDuration": 300
     }
-  }
+  },
+  "crons": [
+    { "path": "/api/cron/period-summaries", "schedule": "0 4 * * *" }
+  ]
 }
