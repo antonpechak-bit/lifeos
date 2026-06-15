@@ -869,9 +869,44 @@ export default function Dashboard() {
             {/* ── ACTIVE SPRINTS ────────────────────────────── */}
             {activeSprints.length > 0 && (
               <div style={{ animation:'fadeUp 0.75s ease forwards' }}>
-                <div style={{ fontSize:11, color:s.muted, letterSpacing:'0.12em', textTransform:'uppercase', marginBottom:12, paddingLeft:4 }}>
-                  Активные спринты
+                {/* Header row */}
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12, paddingLeft:4 }}>
+                  <div style={{ fontSize:11, color:s.muted, letterSpacing:'0.12em', textTransform:'uppercase' }}>
+                    Активные спринты
+                  </div>
+                  <button onClick={() => router.push('/cycle-review')} style={{
+                    background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.12)',
+                    borderRadius:999, padding:'5px 14px', cursor:'pointer',
+                    fontSize:11, color:s.dim, fontFamily:"'DM Sans',sans-serif",
+                  }}>
+                    Итог цикла →
+                  </button>
                 </div>
+
+                {/* Soft deadline reminder */}
+                {activeSprints.some(sp => {
+                  const elapsed = Math.max(1, Math.ceil((new Date() - new Date(sp.created_at)) / 86400000))
+                  return elapsed >= (sp.target_days || 14)
+                }) && (
+                  <div style={{
+                    marginBottom:12,
+                    background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.1)',
+                    borderRadius:18, padding:'13px 16px',
+                    display:'flex', alignItems:'center', justifyContent:'space-between', gap:12,
+                  }}>
+                    <div style={{ fontSize:13, color:s.muted, lineHeight:1.5, flex:1 }}>
+                      Похоже, период подходит к завершению — хочешь подвести итог?
+                    </div>
+                    <button onClick={() => router.push('/cycle-review')} style={{
+                      flexShrink:0, padding:'7px 14px', borderRadius:999,
+                      background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.14)',
+                      color:s.dim, fontSize:12, cursor:'pointer', fontFamily:"'DM Sans',sans-serif",
+                    }}>
+                      К ревью →
+                    </button>
+                  </div>
+                )}
+
                 <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
                   {activeSprints.map(sprint => (
                     <SprintCard key={sprint.id} sprint={sprint} checkins={checkins} today={today} router={router} />
