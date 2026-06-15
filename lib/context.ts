@@ -253,10 +253,10 @@ export async function getUserContext(userId: string): Promise<UserContext> {
       .order('created_at', { ascending: false })
       .limit(10),
 
-    // Данные с носимых устройств — последние 30 дней
+    // Данные с носимых устройств + wellbeing — последние 30 дней
     supabaseAdmin
       .from('daily_logs')
-      .select('user_id, date, sleep_hours, hrv, steps, resting_heart_rate, workout_minutes, workout_type, vo2max')
+      .select('user_id, date, sleep_hours, hrv, steps, resting_heart_rate, workout_minutes, workout_type, vo2max, energy, mood, meaning, connection')
       .eq('user_id', userId)
       .gte('date', thirtyDaysAgoStr)
       .order('date', { ascending: false }),
@@ -346,6 +346,12 @@ export async function getUserContext(userId: string): Promise<UserContext> {
   const dailyLogs = dailyLogsRes.data || []
   const workouts  = (workoutsRes.data || []) as WorkoutRow[]
 
+  // Lookup daily_logs by date for merging wellbeing into checkins
+  const dailyLogsByDate: Record<string, any> = {}
+  for (const d of dailyLogs) {
+    dailyLogsByDate[d.date] = d
+  }
+
   // Compute alignment scores from recent value_checkins
   const rawValues = (userValuesRes.data || []) as UserValue[]
   const valueCheckins = valueCheckinsRes.data || []
@@ -370,7 +376,16 @@ export async function getUserContext(userId: string): Promise<UserContext> {
   return {
     state_map: sessionRes.data?.state_map || null,
     active_sprints: sprintsRes.data || [],
-    recent_checkins: checkinsRes.data || [],
+    recent_checkins: (checkinsRes.data || []).map((c: any) => {
+      const dl = dailyLogsByDate[c.date]
+      return {
+        ...c,
+        energy:     dl?.energy     ?? null,
+        mood:       dl?.mood       ?? null,
+        meaning:    dl?.meaning    ?? null,
+        connection: dl?.connection ?? null,
+      }
+    }),
     weekly_summary: weeklyRes.data?.summary || null,
     latest_biomarkers: latestBiomarkers,
     biomarker_trends: biomarkerTrends,
