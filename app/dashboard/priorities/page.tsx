@@ -180,9 +180,15 @@ function PrioritiesContent() {
     setChatLoading(true)
 
     try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const accessToken = sessionData?.session?.access_token ?? ''
+
       const res = await fetch('/api/sprint', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({
           messages: newMessages,
           stateMap: session?.state_map,

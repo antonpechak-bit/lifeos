@@ -5,6 +5,13 @@ import { createClient } from '@supabase/supabase-js'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
+// Anon client — used only for JWT verification (respects RLS)
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
+// Service-role client — used only after identity is confirmed
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -92,7 +99,23 @@ function parseDays(raw: string): number | null {
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, stateMap, priority, sessionId, userId } = await req.json()
+    const { messages, stateMap, priority, sessionId, userId: bodyUserId } = await req.json()
+
+    // Verify identity against JWT — never trust userId from the request body alone
+    const authHeader = req.headers.get('authorization')
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser(token)
+    if (authError || !authUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    // If caller provided a userId, it must match the token's subject
+    if (bodyUserId && bodyUserId !== authUser.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    const userId = authUser.id
 
     // Check for active cycle before building prompt
     let activeCycle: any = null
