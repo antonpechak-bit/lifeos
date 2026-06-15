@@ -84,6 +84,7 @@ export interface UserContext {
   period_summaries: PeriodSummary[]
   user_values: UserValue[]
   drift_signal: DriftSignal
+  sprint_name_index: Record<string, string>
 }
 
 // ─── Оценка статуса биомаркера по ref_min/ref_max из данных ──
@@ -200,6 +201,7 @@ export async function getUserContext(userId: string): Promise<UserContext> {
     periodSummariesRes,
     userValuesRes,
     valueCheckinsRes,
+    completedSprintsRes,
   ] = await Promise.all([
     // Последняя завершённая сессия с State Map
     supabaseAdmin
@@ -307,6 +309,15 @@ export async function getUserContext(userId: string): Promise<UserContext> {
       .eq('user_id', userId)
       .gte('date', twentyOneDaysAgoStr)
       .order('date'),
+
+    // Recently completed sprints — for sprint name lookup in insights
+    supabaseAdmin
+      .from('sprints')
+      .select('id, behavior_name')
+      .eq('user_id', userId)
+      .eq('status', 'completed')
+      .order('completed_at', { ascending: false })
+      .limit(20),
   ])
 
   const healthRows = healthRes.data || []
@@ -365,6 +376,15 @@ export async function getUserContext(userId: string): Promise<UserContext> {
 
   const layerStatuses = (layerStatusRes.data || []) as LayerStatus[]
 
+  // Build sprint name index (active + recently completed) for insight attribution
+  const sprintNameIndex: Record<string, string> = {}
+  for (const sp of (sprintsRes.data || [])) {
+    if (sp.id && sp.behavior_name) sprintNameIndex[sp.id] = sp.behavior_name
+  }
+  for (const sp of (completedSprintsRes.data || [])) {
+    if (sp.id && sp.behavior_name) sprintNameIndex[sp.id] = sp.behavior_name
+  }
+
   const drift_signal = computeDrift({
     userValues: rawValues,
     valueCheckins,
@@ -397,6 +417,7 @@ export async function getUserContext(userId: string): Promise<UserContext> {
     period_summaries: (periodSummariesRes.data || []) as PeriodSummary[],
     user_values: userValues,
     drift_signal,
+    sprint_name_index: sprintNameIndex,
   }
 }
 
@@ -518,7 +539,10 @@ export function formatContextForPrompt(ctx: UserContext): string {
         : 'Без слоя'
       insightLines.push(`### ${layerLabel}`)
       for (const ins of insights) {
-        insightLines.push(`- ${ins.content}`)
+        const sprintName = ins.related_sprint_id && ctx.sprint_name_index?.[ins.related_sprint_id]
+          ? ` · спринт «${ctx.sprint_name_index[ins.related_sprint_id]}»`
+          : ''
+        insightLines.push(`- ${ins.content}${sprintName}`)
       }
     }
     parts.push(`## Накопленные наблюдения\n${insightLines.join('\n')}`)

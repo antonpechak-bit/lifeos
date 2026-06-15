@@ -928,6 +928,19 @@ export default function Dashboard() {
               </div>
             )}
 
+            {/* ── SPRINT HISTORY LINK ───────────────────────── */}
+            <div style={{ animation: 'fadeUp 0.8s ease forwards' }}>
+              <button onClick={() => router.push('/dashboard/sprints')} style={{
+                width: '100%', padding: '13px 20px', borderRadius: 20,
+                background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)',
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                fontFamily: "'DM Sans',sans-serif",
+              }}>
+                <span style={{ fontSize: 13, color: s.muted }}>📋 История спринтов</span>
+                <span style={{ fontSize: 13, color: s.energy }}>→</span>
+              </button>
+            </div>
+
             {/* ── VALUES CARD ───────────────────────────────── */}
             <div style={{
               background: 'linear-gradient(155deg,rgba(200,158,255,0.08) 0%,rgba(255,255,255,0.02) 100%)',
