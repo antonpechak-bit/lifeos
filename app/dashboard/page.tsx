@@ -154,11 +154,12 @@ function DimCard({ dimKey, cfg, value, weekLogs }) {
 // ── Sprint Card ────────────────────────────────────────────────
 function SprintCard({ sprint, checkins, today, router }) {
   const sprintCheckins = checkins.filter(c => c.sprint_id === sprint.id)
-  const todayDone = sprintCheckins.some(c => c.date === today && c.completed)
-  const target    = sprint.target_days || 21
-  const daysElapsed   = Math.max(1, Math.ceil((new Date() - new Date(sprint.created_at)) / 86400000))
-  const daysRemaining = target - daysElapsed
-  const pct       = Math.min(daysElapsed / target, 1)
+  const todayDone      = sprintCheckins.some(c => c.date === today && c.completed)
+  const hasDeadline    = sprint.target_days != null
+  const target         = sprint.target_days || null
+  const daysElapsed    = Math.max(1, Math.ceil((new Date() - new Date(sprint.created_at)) / 86400000))
+  const daysRemaining  = hasDeadline ? target - daysElapsed : null
+  const pct            = hasDeadline ? Math.min(daysElapsed / target, 1) : null
 
   const todayLabel = new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }).replace('.', '')
 
@@ -199,29 +200,54 @@ function SprintCard({ sprint, checkins, today, router }) {
             {sprint.behavior_name}
           </div>
           {sprint.anchor && <div style={{ fontSize:12, color:s.muted }}>⚓ {sprint.anchor}</div>}
+
+          {/* Deadline badge — only if target_days is set */}
+          {hasDeadline ? (
+            <div style={{
+              display: 'inline-flex', marginTop: 8,
+              fontSize: 10, fontWeight: 500, borderRadius: 999, padding: '3px 10px',
+              background: daysRemaining > 0 ? 'rgba(106,168,255,0.1)' : daysRemaining === 0 ? 'rgba(255,184,77,0.15)' : 'rgba(255,90,90,0.12)',
+              border: `1px solid ${daysRemaining > 0 ? 'rgba(106,168,255,0.25)' : daysRemaining === 0 ? 'rgba(255,184,77,0.35)' : 'rgba(255,90,90,0.3)'}`,
+              color: daysRemaining > 0 ? s.energy : daysRemaining === 0 ? s.stress : s.overload,
+            }}>
+              {daysRemaining > 0 ? `Осталось ${daysRemaining} дн.` : daysRemaining === 0 ? 'Завершается сегодня' : 'Ориентир истёк'}
+            </div>
+          ) : (
+            <div style={{
+              display: 'inline-flex', marginTop: 8,
+              fontSize: 10, fontWeight: 500, borderRadius: 999, padding: '3px 10px',
+              background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)',
+              color: s.muted,
+            }}>
+              Без срока
+            </div>
+          )}
+        </div>
+
+        {/* Arc ring — with target, or day counter without target */}
+        {hasDeadline ? (
+          <div style={{ position:'relative', width:sz, height:sz, flexShrink:0 }}>
+            <svg width={sz} height={sz} style={{ transform:'rotate(-90deg)' }}>
+              <circle cx={sz/2} cy={sz/2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={5} />
+              <circle cx={sz/2} cy={sz/2} r={r} fill="none" stroke={s.recovery} strokeWidth={5}
+                strokeDasharray={circ} strokeDashoffset={circ*(1-pct)} strokeLinecap="round"
+                style={{ filter:`drop-shadow(0 0 8px ${s.recovery}99)`, transition:'stroke-dashoffset 0.8s ease' }} />
+            </svg>
+            <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center' }}>
+              <span style={{ fontSize:15, fontWeight:600, color:s.recovery, lineHeight:1 }}>{daysElapsed}</span>
+              <span style={{ fontSize:9, color:s.muted }}>/{target}</span>
+            </div>
+          </div>
+        ) : (
           <div style={{
-            display: 'inline-flex', marginTop: 8,
-            fontSize: 10, fontWeight: 500, borderRadius: 999, padding: '3px 10px',
-            background: daysRemaining > 0 ? 'rgba(106,168,255,0.1)' : daysRemaining === 0 ? 'rgba(255,184,77,0.15)' : 'rgba(255,90,90,0.12)',
-            border: `1px solid ${daysRemaining > 0 ? 'rgba(106,168,255,0.25)' : daysRemaining === 0 ? 'rgba(255,184,77,0.35)' : 'rgba(255,90,90,0.3)'}`,
-            color: daysRemaining > 0 ? s.energy : daysRemaining === 0 ? s.stress : s.overload,
+            width:sz, height:sz, flexShrink:0,
+            display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+            background:'rgba(82,255,154,0.06)', border:'1px solid rgba(82,255,154,0.15)', borderRadius:'50%',
           }}>
-            {daysRemaining > 0 ? `Осталось ${daysRemaining} дн.` : daysRemaining === 0 ? 'Завершается сегодня' : 'Спринт завершён'}
-          </div>
-        </div>
-        {/* arc ring */}
-        <div style={{ position:'relative', width:sz, height:sz, flexShrink:0 }}>
-          <svg width={sz} height={sz} style={{ transform:'rotate(-90deg)' }}>
-            <circle cx={sz/2} cy={sz/2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={5} />
-            <circle cx={sz/2} cy={sz/2} r={r} fill="none" stroke={s.recovery} strokeWidth={5}
-              strokeDasharray={circ} strokeDashoffset={circ*(1-pct)} strokeLinecap="round"
-              style={{ filter:`drop-shadow(0 0 8px ${s.recovery}99)`, transition:'stroke-dashoffset 0.8s ease' }} />
-          </svg>
-          <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center' }}>
             <span style={{ fontSize:15, fontWeight:600, color:s.recovery, lineHeight:1 }}>{daysElapsed}</span>
-            <span style={{ fontSize:9, color:s.muted }}>/{target}</span>
+            <span style={{ fontSize:9, color:s.muted }}>дн</span>
           </div>
-        </div>
+        )}
       </div>
 
       {/* week strip */}
@@ -259,7 +285,8 @@ function SprintCard({ sprint, checkins, today, router }) {
       </button>
     </div>
 
-    {daysRemaining <= 0 && (
+    {/* Per-sprint expired banner — only when target_days is set */}
+    {hasDeadline && daysRemaining <= 0 && (
       <div style={{
         background: 'linear-gradient(155deg,rgba(255,184,77,0.07) 0%,rgba(255,255,255,0.02) 100%)',
         backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
@@ -268,14 +295,14 @@ function SprintCard({ sprint, checkins, today, router }) {
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
       }}>
         <div style={{ fontSize: 13, color: s.dim, lineHeight: 1.5, flex: 1 }}>
-          Спринт «{sprint.behavior_name}» завершён. Хочешь обсудить итоги?
+          Спринт «{sprint.behavior_name}» — ориентир истёк.
         </div>
         <button onClick={() => router.push(`/sprint-review/${sprint.id}`)} style={{
           flexShrink: 0, padding: '8px 16px', borderRadius: 999, border: 'none',
           background: `linear-gradient(135deg,${s.stress} 0%,${s.mindfulness} 100%)`,
           color: '#07090D', fontSize: 12, fontWeight: 600, cursor: 'pointer',
         }}>
-          Обсудить →
+          Закрыть →
         </button>
       </div>
     )}
@@ -503,6 +530,7 @@ export default function Dashboard() {
   const [monthLogs, setMonthLogs]     = useState([])
   const [workouts, setWorkouts]       = useState([])
   const [checkins, setCheckins]       = useState([])
+  const [activeCycle, setActiveCycle] = useState(null)
   const [loading, setLoading]         = useState(true)
   const [showHistory, setShowHistory] = useState(false)
   const [driftSignal, setDriftSignal] = useState(null)
@@ -530,6 +558,7 @@ export default function Dashboard() {
           { data: checkData },
           { data: mLogs },
           { data: wkts },
+          { data: cycleData },
         ] = await Promise.all([
           supabase.from('sessions').select('*').eq('user_id', u.id).order('created_at', { ascending: false }),
           supabase.from('sprints').select('*').eq('user_id', u.id).eq('status','active').order('created_at', { ascending: false }),
@@ -537,6 +566,7 @@ export default function Dashboard() {
           supabase.from('checkins').select('*').eq('user_id', u.id).gte('date', weekStr),
           supabase.from('daily_logs').select('date,steps,workout_minutes,workout_type,vo2max').eq('user_id', u.id).gte('date', monthStr).order('date'),
           supabase.from('workouts').select('date,workout_type,minutes').eq('user_id', u.id).gte('date', monthStr).order('date'),
+          supabase.from('cycles').select('id, started_at, target_days').eq('user_id', u.id).eq('status', 'active').order('started_at', { ascending: false }).limit(1),
         ])
 
         const { data: todayLogData } = await supabase
@@ -549,6 +579,7 @@ export default function Dashboard() {
         setWorkouts(wkts || [])
         setTodayLog(todayLogData || null)
         setCheckins(checkData || [])
+        setActiveCycle(cycleData?.[0] || null)
 
         // Drift signal — non-blocking, loads after main data
         fetch(`/api/drift?userId=${u.id}`)
@@ -883,11 +914,21 @@ export default function Dashboard() {
                   </button>
                 </div>
 
-                {/* Soft deadline reminder */}
-                {activeSprints.some(sp => {
-                  const elapsed = Math.max(1, Math.ceil((new Date() - new Date(sp.created_at)) / 86400000))
-                  return elapsed >= (sp.target_days || 14)
-                }) && (
+                {/* Soft period reminder — cycle-aware, unified (one reminder) */}
+                {(() => {
+                  // Priority: cycle target expired
+                  if (activeCycle?.target_days && activeCycle?.started_at) {
+                    const elapsed = Math.ceil((new Date() - new Date(activeCycle.started_at)) / 86400000)
+                    if (elapsed >= activeCycle.target_days) return true
+                    return false
+                  }
+                  // Fallback: any sprint with deadline expired
+                  return activeSprints.some(sp => {
+                    if (!sp.target_days) return false
+                    const elapsed = Math.max(1, Math.ceil((new Date() - new Date(sp.created_at)) / 86400000))
+                    return elapsed >= sp.target_days
+                  })
+                })() && (
                   <div style={{
                     marginBottom:12,
                     background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.1)',

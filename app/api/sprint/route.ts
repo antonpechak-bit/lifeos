@@ -5,10 +5,15 @@ import { createClient } from '@supabase/supabase-js'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
 const SPRINT_SYSTEM = `Ты — компаньон Life OS для углублённой работы с конкретным приоритетом.
 
 У тебя есть State Map человека — карта его текущего состояния из диагностики.
-Твоя задача: углубиться в один конкретный приоритет, понять детали, и вместе составить первый спринт.
+Твоя задача: углубиться в один конкретный приоритет, понять детали, и вместе составить спринт.
 
 СТРУКТУРА РАЗГОВОРА:
 1. Начни с 2–3 уточняющих вопросов по конкретному приоритету
@@ -18,10 +23,10 @@ const SPRINT_SYSTEM = `Ты — компаньон Life OS для углублё
 2. На основе ответов предложи конкретное поведение из меню спринтов
    — маленькое (≤5 мин), с якорем к существующей рутине
    — объясни почему именно это
-3. Вместе уточните детали:
+3. Вместе уточните детали — по одному за раз:
    — якорь (к чему привяжем)
    — время (когда)
-   — как будем отслеживать
+   — длительность: предложи ориентир исходя из уровня практики (micro → «давай 14 дней?», mini → «попробуем 21?», basic → «месяц — как тебе?»). Это предложение, не назначение. Человек может назвать другой срок или сказать «без срока» — принимай. Один вопрос за раз, не перечень.
 4. Когда договорились — скажи: "Отлично. Записываю спринт."
    И сразу выведи в формате:
 
@@ -32,7 +37,12 @@ ANCHOR: к чему привязываем
 LAYER: sleep|nutrition|movement|ans|connection|attention|values
 LEVEL: micro|mini|basic
 DAYS: 14
+CYCLE_DAYS:
 [SPRINT_END]
+
+Где:
+— DAYS: согласованное число дней (например 14, 21, 7). Если человек выбрал «без срока» — оставь пустым.
+— CYCLE_DAYS: заполняй ТОЛЬКО если нет активного цикла (указано ниже) И в разговоре прозвучал горизонт периода («на месяц», «на три недели»). Иначе — оставь пустым.
 
 ПРАВИЛА:
 — Один вопрос за раз
@@ -40,6 +50,7 @@ DAYS: 14
 — Тон: тёплый, прямой, конкретный
 — Не теория — практика
 — Если человек хочет другое поведение — принимай и адаптируй
+— Длительность — итог разговора, не умолчание
 
 МЕНЮ ПОВЕДЕНИЙ ПО СЛОЯМ:
 
@@ -71,9 +82,35 @@ DAYS: 14
 - Белок на завтрак (mini)
 - Осознанный завтрак (mini) — без экрана, медленно`
 
+function parseDays(raw: string): number | null {
+  if (!raw) return null
+  const lower = raw.trim().toLowerCase()
+  if (lower === '' || lower === 'null' || lower === 'none' || lower === '0' || lower === 'без срока') return null
+  const n = parseInt(raw)
+  return isNaN(n) || n <= 0 ? null : n
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { messages, stateMap, priority, sessionId, userId } = await req.json()
+
+    // Check for active cycle before building prompt
+    let activeCycle: any = null
+    if (userId) {
+      const { data } = await supabaseAdmin
+        .from('cycles')
+        .select('id, started_at, target_days')
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .order('started_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      activeCycle = data
+    }
+
+    const cycleContext = activeCycle
+      ? `ЦИКЛ: активен (начат ${activeCycle.started_at || '—'}${activeCycle.target_days ? `, ориентир ${activeCycle.target_days} дн.` : ''}). Новый спринт войдёт в этот цикл. Поле CYCLE_DAYS — не заполнять.`
+      : `ЦИКЛ: нет активного цикла. Это начало нового периода. После того как договоришься о спринте и длительности — можно спросить про горизонт периода («на сколько в целом настраиваемся?»). Если человек назовёт срок — запиши в CYCLE_DAYS. Если нет — оставь пустым.`
 
     const systemWithContext = `${SPRINT_SYSTEM}
 
@@ -81,7 +118,9 @@ STATE MAP ПОЛЬЗОВАТЕЛЯ:
 ${stateMap || 'Не указана'}
 
 ТЕКУЩИЙ ПРИОРИТЕТ ДЛЯ УГЛУБЛЕНИЯ:
-${priority || 'Не указан'}`
+${priority || 'Не указан'}
+
+${cycleContext}`
 
     let response
     try {
@@ -101,37 +140,60 @@ ${priority || 'Не указан'}`
 
     const reply = response.content[0].type === 'text' ? response.content[0].text : ''
 
-    // Save sprint if detected
     if (reply.includes('[SPRINT_START]') && sessionId && userId) {
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      )
-
       const sprintRaw = reply.split('[SPRINT_START]')[1]?.split('[SPRINT_END]')[0]?.trim()
       if (sprintRaw) {
         const lines = sprintRaw.split('\n').map(l => l.trim()).filter(Boolean)
-        const get = (key: string) => lines.find(l => l.startsWith(key + ':'))?.slice(key.length + 1).trim() || ''
+        const get = (key: string) => lines.find(l => l.startsWith(key + ':'))?.slice(key.length + 1).trim() ?? ''
 
-        
+        const target_days = parseDays(get('DAYS'))
+        const cycle_days  = parseDays(get('CYCLE_DAYS'))
 
-      const endsAt = new Date()
-endsAt.setDate(endsAt.getDate() + parseInt(get('DAYS') || '14'))
-const { data: insertData, error: insertError } = await supabase.from('sprints').insert({
-  user_id: userId,
-  session_id: sessionId,
-  layer: get('LAYER'),
-  behavior_name: get('NAME'),
-  behavior_description: get('DESCRIPTION'),
-  anchor: get('ANCHOR'),
-  level: get('LEVEL'),
-  target_days: parseInt(get('DAYS') || '14'),
-  started_at: new Date().toISOString().split('T')[0],
-  ends_at: endsAt.toISOString().split('T')[0],
-  status: 'active',
-})
-console.log('Sprint insert data:', JSON.stringify(insertData))
-console.log('Sprint insert error:', JSON.stringify(insertError))
+        const today  = new Date().toISOString().split('T')[0]
+        const ends_at = target_days
+          ? (() => { const d = new Date(); d.setDate(d.getDate() + target_days); return d.toISOString().split('T')[0] })()
+          : null
+
+        // Find or create active cycle
+        let cycleId: string | null = activeCycle?.id || null
+
+        if (!cycleId) {
+          const { data: newCycle } = await supabaseAdmin
+            .from('cycles')
+            .insert({
+              user_id: userId,
+              status: 'active',
+              started_at: today,
+              target_days: cycle_days || null,
+            })
+            .select('id')
+            .single()
+          cycleId = newCycle?.id || null
+        } else if (cycle_days && !activeCycle?.target_days) {
+          // Update existing cycle target if not yet set
+          await supabaseAdmin
+            .from('cycles')
+            .update({ target_days: cycle_days })
+            .eq('id', cycleId)
+            .is('target_days', null)
+        }
+
+        const { error: insertError } = await supabaseAdmin.from('sprints').insert({
+          user_id: userId,
+          session_id: sessionId,
+          cycle_id: cycleId,
+          layer: get('LAYER'),
+          behavior_name: get('NAME'),
+          behavior_description: get('DESCRIPTION'),
+          anchor: get('ANCHOR'),
+          level: get('LEVEL'),
+          target_days,
+          started_at: today,
+          ends_at,
+          status: 'active',
+        })
+
+        if (insertError) console.error('Sprint insert error:', insertError)
       }
     }
 

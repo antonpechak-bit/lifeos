@@ -83,6 +83,23 @@ export async function POST(req: NextRequest) {
 
     const completedAt = new Date().toISOString()
 
+    // Close the active cycle (if any)
+    const { data: activeCycle } = await supabaseAdmin
+      .from('cycles')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (activeCycle) {
+      await supabaseAdmin
+        .from('cycles')
+        .update({ status: 'completed', completed_at: completedAt })
+        .eq('id', activeCycle.id)
+    }
+
     // Complete all sprints with the shared reflection
     const completedSprints = await Promise.all(
       sprints.map(async (sprint, idx) => {
