@@ -1,6 +1,6 @@
 // @ts-nocheck
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
@@ -17,11 +17,15 @@ const s = {
 
 export default function Home() {
   const router = useRouter()
-  const [name, setName]       = useState('')
-  const [email, setEmail]     = useState('')
-  const [loading, setLoading] = useState(false)
-  const [sent, setSent]       = useState(false)
+  const [name, setName]         = useState('')
+  const [email, setEmail]       = useState('')
+  const [code, setCode]         = useState('')
+  const [loading, setLoading]   = useState(false)
+  const [verifying, setVerifying] = useState(false)
+  const [sent, setSent]         = useState(false)
+  const [error, setError]       = useState('')
   const [checking, setChecking] = useState(true)
+  const codeRef = useRef(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -30,23 +34,57 @@ export default function Home() {
     })
   }, [])
 
-  async function handleSubmit() {
+  async function handleSendCode() {
     if (!email.trim()) return
     setLoading(true)
-    const { error } = await supabase.auth.signInWithOtp({
+    setError('')
+    const { error: err } = await supabase.auth.signInWithOtp({
       email: email.trim(),
       options: {
-        emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://lifeos-iota-six.vercel.app'}/auth/callback`,
-        data: { name: name.trim() || null }
+        data: { name: name.trim() || null },
+        shouldCreateUser: true,
       }
     })
     setLoading(false)
-    if (!error) setSent(true)
+    if (err) {
+      setError(err.message)
+    } else {
+      setSent(true)
+      setTimeout(() => codeRef.current?.focus(), 100)
+    }
+  }
+
+  async function handleVerify() {
+    if (code.trim().length !== 6) return
+    setVerifying(true)
+    setError('')
+    const { error: err } = await supabase.auth.verifyOtp({
+      email: email.trim(),
+      token: code.trim(),
+      type: 'email',
+    })
+    setVerifying(false)
+    if (err) {
+      setError(err.message === 'Token has expired or is invalid'
+        ? 'Код неверный или устарел. Запроси новый.'
+        : err.message)
+      setCode('')
+    } else {
+      router.push('/dashboard')
+    }
+  }
+
+  async function handleResend() {
+    setCode('')
+    setError('')
+    setSent(false)
+    setTimeout(handleSendCode, 50)
   }
 
   if (checking) return null
 
-  const canSubmit = !loading && email.trim().length > 0
+  const canSend   = !loading && email.trim().length > 0
+  const canVerify = !verifying && code.trim().length === 6
 
   return (
     <main style={{
@@ -69,7 +107,7 @@ export default function Home() {
       {/* Background orbs */}
       <div style={{ position:'fixed', top:-120, right:-80,  width:500, height:500, borderRadius:'50%', background:`radial-gradient(circle,${s.energy}18 0%,transparent 65%)`,    animation:'orbFloat  12s ease-in-out infinite',      pointerEvents:'none' }} />
       <div style={{ position:'fixed', bottom:-140, left:-100, width:560, height:560, borderRadius:'50%', background:`radial-gradient(circle,${s.mindfulness}12 0%,transparent 65%)`, animation:'orbFloat2 15s ease-in-out infinite 2s',  pointerEvents:'none' }} />
-      <div style={{ position:'fixed', top:'40%', left:'60%',  width:320, height:320, borderRadius:'50%', background:`radial-gradient(circle,${s.recovery}0A 0%,transparent 60%)`,    animation:'orbFloat3 10s ease-in-out infinite 4s',  pointerEvents:'none', animation:'glowPulse 8s ease-in-out infinite' }} />
+      <div style={{ position:'fixed', top:'40%', left:'60%',  width:320, height:320, borderRadius:'50%', background:`radial-gradient(circle,${s.recovery}0A 0%,transparent 60%)`,    animation:'glowPulse 8s ease-in-out infinite',      pointerEvents:'none' }} />
 
       <div style={{ position:'relative', zIndex:1, textAlign:'center', maxWidth:460, width:'100%', animation:'fadeUp 0.6s ease forwards' }}>
 
@@ -119,26 +157,87 @@ export default function Home() {
 
         {/* Glass card */}
         {sent ? (
+          /* Step 2: enter OTP code */
           <div style={{
             background: 'linear-gradient(155deg,rgba(255,255,255,0.09) 0%,rgba(255,255,255,0.03) 100%)',
             backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
-            border: `1px solid ${s.recovery}30`,
+            border: `1px solid ${s.energy}30`,
             borderRadius: 28, padding: '32px 28px', textAlign: 'center',
-            boxShadow: `0 0 60px ${s.recovery}12, 0 24px 80px rgba(0,0,0,0.4)`,
+            boxShadow: `0 0 60px ${s.energy}12, 0 24px 80px rgba(0,0,0,0.4)`,
           }}>
             <div style={{
               width: 56, height: 56, borderRadius: '50%', margin: '0 auto 16px',
-              background: `${s.recovery}18`, border: `1px solid ${s.recovery}40`,
+              background: `${s.energy}18`, border: `1px solid ${s.energy}40`,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 24, boxShadow: `0 0 32px ${s.recovery}30`,
+              fontSize: 24, boxShadow: `0 0 32px ${s.energy}30`,
             }}>✉️</div>
-            <div style={{ fontSize:17, fontWeight:500, color:s.text, marginBottom:10 }}>Проверь почту</div>
-            <div style={{ fontSize:14, color:s.dim, lineHeight:1.75 }}>
-              Отправили ссылку на <strong style={{ color:s.energy }}>{email}</strong>.<br/>
-              Кликни по ней — и окажешься внутри.
+            <div style={{ fontSize:17, fontWeight:500, color:s.text, marginBottom:8 }}>Введи код из письма</div>
+            <div style={{ fontSize:14, color:s.dim, lineHeight:1.75, marginBottom:24 }}>
+              Отправили 6-значный код на <strong style={{ color:s.energy }}>{email}</strong>.
             </div>
+
+            <input
+              ref={codeRef}
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={6}
+              placeholder="• • • • • •"
+              value={code}
+              onChange={e => { setError(''); setCode(e.target.value.replace(/\D/g,'').slice(0,6)) }}
+              onKeyDown={e => e.key === 'Enter' && handleVerify()}
+              style={{
+                width: '100%', boxSizing: 'border-box',
+                background: 'rgba(255,255,255,0.05)',
+                border: `1px solid ${code.length === 6 ? `${s.energy}60` : 'rgba(255,255,255,0.12)'}`,
+                borderRadius: 14, padding: '14px 16px',
+                color: s.text, fontFamily: "'DM Sans',sans-serif",
+                fontSize: 24, fontWeight: 500, textAlign: 'center',
+                letterSpacing: '0.35em', marginBottom: 12,
+                transition: 'border-color 0.2s',
+                boxShadow: code.length === 6 ? `0 0 20px ${s.energy}18` : 'none',
+              }}
+            />
+
+            {error && (
+              <div style={{ fontSize:13, color:s.stress, marginBottom:12, lineHeight:1.4 }}>
+                {error}
+              </div>
+            )}
+
+            <button
+              onClick={handleVerify}
+              disabled={!canVerify}
+              style={{
+                width: '100%', padding: '14px',
+                borderRadius: 999, border: 'none',
+                cursor: canVerify ? 'pointer' : 'not-allowed',
+                background: canVerify
+                  ? `linear-gradient(135deg,${s.energy} 0%,${s.mindfulness} 100%)`
+                  : 'rgba(255,255,255,0.06)',
+                color: canVerify ? '#07090D' : 'rgba(255,255,255,0.2)',
+                fontFamily: "'DM Sans',sans-serif", fontSize: 14, fontWeight: 600,
+                transition: 'all 0.2s',
+                boxShadow: canVerify ? `0 0 40px ${s.energy}50, 0 4px 24px ${s.energy}30` : 'none',
+                marginBottom: 16,
+              }}
+            >
+              {verifying ? 'Проверяем...' : 'Войти →'}
+            </button>
+
+            <button
+              onClick={handleResend}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                fontSize: 13, color: s.muted, fontFamily: "'DM Sans',sans-serif",
+                textDecoration: 'underline', padding: 0,
+              }}
+            >
+              Отправить код заново
+            </button>
           </div>
         ) : (
+          /* Step 1: enter email */
           <div style={{
             background: 'linear-gradient(155deg,rgba(255,255,255,0.075) 0%,rgba(255,255,255,0.025) 100%)',
             backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
@@ -164,39 +263,44 @@ export default function Home() {
               type="email"
               placeholder="Твой email"
               value={email}
-              onChange={e => setEmail(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+              onChange={e => { setError(''); setEmail(e.target.value) }}
+              onKeyDown={e => e.key === 'Enter' && handleSendCode()}
               style={{
                 width: '100%', boxSizing: 'border-box',
                 background: 'rgba(255,255,255,0.05)',
                 border: `1px solid ${email.trim() ? `${s.energy}40` : 'rgba(255,255,255,0.1)'}`,
                 borderRadius: 14, padding: '12px 16px',
                 color: s.text, fontFamily: "'DM Sans',sans-serif",
-                fontSize: 14, marginBottom: 16,
+                fontSize: 14, marginBottom: error ? 8 : 16,
                 transition: 'border-color 0.2s',
                 boxShadow: email.trim() ? `0 0 20px ${s.energy}12` : 'none',
               }}
             />
+            {error && (
+              <div style={{ fontSize:13, color:s.stress, marginBottom:12, lineHeight:1.4 }}>
+                {error}
+              </div>
+            )}
             <button
-              onClick={handleSubmit}
-              disabled={!canSubmit}
+              onClick={handleSendCode}
+              disabled={!canSend}
               style={{
                 width: '100%', padding: '14px',
                 borderRadius: 999, border: 'none',
-                cursor: canSubmit ? 'pointer' : 'not-allowed',
-                background: canSubmit
+                cursor: canSend ? 'pointer' : 'not-allowed',
+                background: canSend
                   ? `linear-gradient(135deg,${s.energy} 0%,${s.mindfulness} 100%)`
                   : 'rgba(255,255,255,0.06)',
-                color: canSubmit ? '#07090D' : 'rgba(255,255,255,0.2)',
+                color: canSend ? '#07090D' : 'rgba(255,255,255,0.2)',
                 fontFamily: "'DM Sans',sans-serif", fontSize: 14, fontWeight: 600,
                 transition: 'all 0.2s',
-                boxShadow: canSubmit ? `0 0 40px ${s.energy}50, 0 4px 24px ${s.energy}30` : 'none',
+                boxShadow: canSend ? `0 0 40px ${s.energy}50, 0 4px 24px ${s.energy}30` : 'none',
               }}
             >
-              {loading ? 'Отправляем...' : 'Получить ссылку на почту →'}
+              {loading ? 'Отправляем...' : 'Получить код на почту →'}
             </button>
             <p style={{ fontSize:12, color:s.muted, marginTop:14, textAlign:'center' }}>
-              Без пароля. Просто кликни по ссылке в письме.
+              Без пароля. Просто введи 6-значный код из письма.
             </p>
           </div>
         )}
