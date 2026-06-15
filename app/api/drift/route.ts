@@ -1,9 +1,15 @@
 // @ts-nocheck
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { createClient } from '@supabase/supabase-js'
 import { getUserContext } from '@/lib/context'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 async function generateDriftText(
   weakestValues: { value_name: string; score: number }[],
@@ -47,6 +53,16 @@ export async function GET(req: NextRequest) {
 
   if (!userId) {
     return NextResponse.json({ error: 'userId required' }, { status: 400 })
+  }
+
+  const authHeader = req.headers.get('authorization')
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+  if (!token) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  const { data: { user: authUser }, error: authError } = await supabase.auth.getUser(token)
+  if (authError || !authUser || authUser.id !== userId) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   try {

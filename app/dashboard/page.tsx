@@ -582,10 +582,16 @@ export default function Dashboard() {
         setActiveCycle(cycleData?.[0] || null)
 
         // Drift signal — non-blocking, loads after main data
-        fetch(`/api/drift?userId=${u.id}`)
-          .then(r => r.json())
-          .then(data => { if (data?.detected) setDriftSignal(data) })
-          .catch(() => {})
+        supabase.auth.getSession().then(({ data: sd }) => {
+          const tok = sd?.session?.access_token
+          if (!tok) return
+          fetch(`/api/drift?userId=${u.id}`, {
+            headers: { 'Authorization': `Bearer ${tok}` },
+          })
+            .then(r => r.json())
+            .then(data => { if (data?.detected) setDriftSignal(data) })
+            .catch(() => {})
+        })
       } catch (e) {
         console.error('Dashboard load error:', e)
       } finally {

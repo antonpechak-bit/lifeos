@@ -574,9 +574,14 @@ function InsightsContent() {
     if (!user) return
     setGenerating(true)
     try {
+      const { data: sd } = await supabase.auth.getSession()
+      const accessToken = sd?.session?.access_token ?? ''
       const res = await fetch('/api/insights', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({ userId: user.id, weekStart: getWeekStart(), weekEnd: getWeekEnd() }),
       })
       const data = await res.json()
