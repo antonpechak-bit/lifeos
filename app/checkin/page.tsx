@@ -340,6 +340,7 @@ function CheckinContent() {
     setSteps('')
     setAnxietyLevel(null)
     setRegulation(null)
+    setValueScores({})
 
     const weekAgoStr = shiftDate(date, -6)
     const newWeekDaysMap = {}
@@ -377,8 +378,10 @@ function CheckinContent() {
     setSprintDones(newSprintDones)
     setBarriers(newBarriers)
 
-    const { data: logData } = await supabase
-      .from('daily_logs').select('*').eq('user_id', u.id).eq('date', date).maybeSingle()
+    const [{ data: logData }, { data: vcData }] = await Promise.all([
+      supabase.from('daily_logs').select('*').eq('user_id', u.id).eq('date', date).maybeSingle(),
+      supabase.from('value_checkins').select('value_id, score').eq('user_id', u.id).eq('date', date),
+    ])
 
     if (logData) {
       setWellbeing({ energy: logData.energy, mood: logData.mood, meaning: logData.meaning, connection: logData.connection })
@@ -388,6 +391,12 @@ function CheckinContent() {
       setSteps(logData.steps?.toString() || '')
       setAnxietyLevel(logData.anxiety_level)
       setRegulation(logData.regulation_practice)
+    }
+
+    if (vcData && vcData.length > 0) {
+      const scores = {}
+      vcData.forEach(vc => { scores[vc.value_id] = vc.score })
+      setValueScores(scores)
     }
   }
 
