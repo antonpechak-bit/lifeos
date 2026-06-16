@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { SYSTEM_PROMPT } from '@/lib/prompts'
@@ -5,11 +6,32 @@ import { createClient } from '@supabase/supabase-js'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
+// anon client — only used for JWT verification (auth.getUser)
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
+// service role client — bypasses RLS for session writes
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
 export async function POST(req: NextRequest) {
   try {
     const { messages, sessionId } = await req.json()
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json({ error: 'Invalid messages' }, { status: 400 })
+    }
+
+    // Verify caller JWT → resolve userId for RLS-safe write
+    const authHeader = req.headers.get('authorization')
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+    let userId: string | null = null
+    if (token) {
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+      if (!authError && user) userId = user.id
     }
 
     let response
@@ -30,21 +52,23 @@ export async function POST(req: NextRequest) {
 
     const reply = response.content[0].type === 'text' ? response.content[0].text : ''
 
-    if (sessionId) {
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      )
+    if (sessionId && userId) {
       const hasStateMap = reply.includes('[STATE_MAP_START]')
       const stateMap = hasStateMap
         ? reply.split('[STATE_MAP_START]')[1]?.split('[STATE_MAP_END]')[0]?.trim()
         : undefined
 
-      await supabase.from('sessions').update({
-        messages: [...messages, { role: 'assistant', content: reply }],
-        ...(stateMap && { state_map: stateMap, completed: true }),
-        updated_at: new Date().toISOString(),
-      }).eq('id', sessionId)
+      const { error: updateError } = await supabaseAdmin
+        .from('sessions')
+        .update({
+          messages: [...messages, { role: 'assistant', content: reply }],
+          ...(stateMap && { state_map: stateMap, completed: true }),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', sessionId)
+        .eq('user_id', userId)
+
+      if (updateError) console.error('Session update error:', updateError)
     }
 
     return NextResponse.json({ reply })

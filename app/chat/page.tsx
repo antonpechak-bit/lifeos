@@ -196,6 +196,8 @@ function ChatContent() {
   const initRef = useRef<boolean>(false)
   const creatingRef = useRef<boolean>(false)
   const [resumeOption, setResumeOption] = useState<{id: string; updatedAt: string} | null>(null)
+  const [initError, setInitError] = useState(false)
+  const [retryTrigger, setRetryTrigger] = useState(0)
 
   // ── Init: create session or offer resume when no ?session= in URL ──
   useEffect(() => {
@@ -204,29 +206,38 @@ function ChatContent() {
     initRef.current = true
 
     async function init() {
-      const { data: authData } = await supabase.auth.getSession()
-      if (!authData?.session) return
-      const u = authData.session.user
+      try {
+        const { data: authData } = await supabase.auth.getSession()
+        if (!authData?.session) {
+          router.replace('/')   // no auth → back to login, not silent hang
+          return
+        }
+        const u = authData.session.user
 
-      const { data: existing } = await supabase
-        .from('sessions')
-        .select('id, updated_at, messages')
-        .eq('user_id', u.id)
-        .eq('completed', false)
-        .order('updated_at', { ascending: false })
-        .limit(1)
+        const { data: existing } = await supabase
+          .from('sessions')
+          .select('id, updated_at, messages')
+          .eq('user_id', u.id)
+          .eq('completed', false)
+          .order('updated_at', { ascending: false })
+          .limit(1)
 
-      const found = existing?.[0]
-      const hasConversation = found && Array.isArray(found.messages) && found.messages.length > 1
+        const found = existing?.[0]
+        const hasConversation = found && Array.isArray(found.messages) && found.messages.length > 1
 
-      if (hasConversation) {
-        setResumeOption({ id: found.id, updatedAt: found.updated_at })
-      } else {
-        await startNewSession(u.id)
+        if (hasConversation) {
+          setResumeOption({ id: found.id, updatedAt: found.updated_at })
+        } else {
+          await startNewSession(u.id)
+        }
+      } catch (e) {
+        console.error('Chat init error:', e)
+        initRef.current = false   // allow retry
+        setInitError(true)
       }
     }
     init()
-  }, [sessionId])
+  }, [sessionId, retryTrigger])
 
   // ── Load existing session when ?session= is present ──
   useEffect(() => {
@@ -238,6 +249,10 @@ function ChatContent() {
             setCurrentLayer(data.current_layer || 0)
           }
           setSessionLoaded(true)
+        })
+        .catch(e => {
+          console.error('Session load error:', e)
+          setSessionLoaded(true)   // prevent retry loop
         })
     }
   }, [sessionId, sessionLoaded])
@@ -256,9 +271,13 @@ function ChatContent() {
     setLoading(true)
 
     try {
+      const { data: { session: authSess } } = await supabase.auth.getSession()
       const res = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authSess?.access_token && { 'Authorization': `Bearer ${authSess.access_token}` }),
+        },
         body: JSON.stringify({ messages: newMessages, sessionId }),
       })
       const data = await res.json()
@@ -283,13 +302,16 @@ function ChatContent() {
   async function startNewSession(userId: string) {
     if (creatingRef.current) return
     creatingRef.current = true
-    const { data: newSess } = await supabase
+    const { data: newSess, error: insertError } = await supabase
       .from('sessions')
       .insert({ user_id: userId, messages: [], completed: false, current_layer: 0 })
       .select('id')
       .single()
     creatingRef.current = false
-    if (newSess?.id) router.replace(`/chat?session=${newSess.id}`)
+    if (insertError || !newSess?.id) {
+      throw new Error(insertError?.message || 'Session creation failed')
+    }
+    router.replace(`/chat?session=${newSess.id}`)
   }
 
   async function handleStartFresh() {
@@ -315,12 +337,35 @@ function ChatContent() {
 
   const canSend = !loading && input.trim().length > 0
 
-  if (!sessionId && !resumeOption) return (
-    <div style={{ minHeight: '100dvh', background: s.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ width: 28, height: 28, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.08)', borderTop: `2px solid ${s.energy}`, animation: 'spin 0.8s linear infinite' }} />
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-    </div>
-  )
+  if (!sessionId && !resumeOption) {
+    if (initError) return (
+      <div style={{ minHeight:'100dvh', background:s.bg, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:20, padding:24 }}>
+        <style>{`@keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}`}</style>
+        <div style={{ animation:'fadeUp 0.35s ease forwards', textAlign:'center' }}>
+          <div style={{ fontSize:32, marginBottom:16 }}>⚡</div>
+          <div style={{ fontSize:17, fontWeight:500, color:s.text, marginBottom:10 }}>Не удалось начать сессию</div>
+          <div style={{ fontSize:14, color:s.dim, lineHeight:1.7, marginBottom:28, maxWidth:280 }}>
+            Проверь соединение и попробуй снова.
+          </div>
+          <button
+            onClick={() => { setInitError(false); setRetryTrigger(t => t + 1) }}
+            style={{
+              padding:'13px 32px', borderRadius:999, border:'none', cursor:'pointer',
+              background:`linear-gradient(135deg,${s.energy} 0%,${s.mindfulness} 100%)`,
+              color:'#07090D', fontSize:14, fontWeight:600, fontFamily:"'DM Sans',sans-serif",
+              boxShadow:`0 0 32px ${s.energy}40`,
+            }}
+          >Попробовать снова →</button>
+        </div>
+      </div>
+    )
+    return (
+      <div style={{ minHeight:'100dvh', background:s.bg, display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <div style={{ width:28, height:28, borderRadius:'50%', border:'2px solid rgba(255,255,255,0.08)', borderTop:`2px solid ${s.energy}`, animation:'spin 0.8s linear infinite' }} />
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      </div>
+    )
+  }
 
   return (
     <div style={{
