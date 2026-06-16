@@ -193,7 +193,42 @@ function ChatContent() {
   const [sessionLoaded, setSessionLoaded] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const initRef = useRef<boolean>(false)
+  const creatingRef = useRef<boolean>(false)
+  const [resumeOption, setResumeOption] = useState<{id: string; updatedAt: string} | null>(null)
 
+  // ── Init: create session or offer resume when no ?session= in URL ──
+  useEffect(() => {
+    if (sessionId) return
+    if (initRef.current) return
+    initRef.current = true
+
+    async function init() {
+      const { data: authData } = await supabase.auth.getSession()
+      if (!authData?.session) return
+      const u = authData.session.user
+
+      const { data: existing } = await supabase
+        .from('sessions')
+        .select('id, updated_at, messages')
+        .eq('user_id', u.id)
+        .eq('completed', false)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+
+      const found = existing?.[0]
+      const hasConversation = found && Array.isArray(found.messages) && found.messages.length > 1
+
+      if (hasConversation) {
+        setResumeOption({ id: found.id, updatedAt: found.updated_at })
+      } else {
+        await startNewSession(u.id)
+      }
+    }
+    init()
+  }, [sessionId])
+
+  // ── Load existing session when ?session= is present ──
   useEffect(() => {
     if (sessionId && !sessionLoaded) {
       supabase.from('sessions').select('messages, current_layer').eq('id', sessionId).single()
@@ -245,6 +280,29 @@ function ChatContent() {
     setLoading(false)
   }
 
+  async function startNewSession(userId: string) {
+    if (creatingRef.current) return
+    creatingRef.current = true
+    const { data: newSess } = await supabase
+      .from('sessions')
+      .insert({ user_id: userId, messages: [], completed: false, current_layer: 0 })
+      .select('id')
+      .single()
+    creatingRef.current = false
+    if (newSess?.id) router.replace(`/chat?session=${newSess.id}`)
+  }
+
+  async function handleStartFresh() {
+    const { data: authData } = await supabase.auth.getSession()
+    if (!authData?.session) return
+    // Clear messages on old session so it won't resurface in future resume checks
+    if (resumeOption) {
+      await supabase.from('sessions').update({ messages: [] }).eq('id', resumeOption.id)
+    }
+    setResumeOption(null)
+    await startNewSession(authData.session.user.id)
+  }
+
   function handleKey(e: React.KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
   }
@@ -256,6 +314,13 @@ function ChatContent() {
   }
 
   const canSend = !loading && input.trim().length > 0
+
+  if (!sessionId && !resumeOption) return (
+    <div style={{ minHeight: '100dvh', background: s.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ width: 28, height: 28, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.08)', borderTop: `2px solid ${s.energy}`, animation: 'spin 0.8s linear infinite' }} />
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  )
 
   return (
     <div style={{
@@ -273,6 +338,47 @@ function ChatContent() {
         .msg-scroll::-webkit-scrollbar-track { background: transparent }
         .msg-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 999px }
       `}</style>
+
+      {/* ── Resume modal ── */}
+      {resumeOption && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(7,9,13,0.94)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+          <div style={{
+            background:'linear-gradient(155deg,rgba(255,255,255,0.09) 0%,rgba(255,255,255,0.03) 100%)',
+            backdropFilter:'blur(40px)', WebkitBackdropFilter:'blur(40px)',
+            border:'1px solid rgba(255,255,255,0.09)',
+            borderRadius:32, padding:'32px 24px', maxWidth:400, width:'100%',
+            boxShadow:'0 24px 80px rgba(0,0,0,0.6)',
+          }}>
+            <div style={{ fontSize:32, textAlign:'center', marginBottom:16 }}>◔</div>
+            <div style={{ fontSize:17, fontWeight:600, color:s.text, marginBottom:10, textAlign:'center' }}>
+              Незавершённый разговор
+            </div>
+            <div style={{ fontSize:14, color:s.dim, lineHeight:1.8, marginBottom:28, textAlign:'center' }}>
+              Есть разговор от {new Date(resumeOption.updatedAt).toLocaleDateString('ru', { day:'numeric', month:'long' })}.{'\n'}
+              Продолжить с того места или начать заново?
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              <button
+                onClick={() => { router.replace(`/chat?session=${resumeOption.id}`); setResumeOption(null) }}
+                style={{
+                  width:'100%', padding:'14px', borderRadius:999, border:'none', cursor:'pointer',
+                  background:`linear-gradient(135deg,${s.energy} 0%,${s.mindfulness} 100%)`,
+                  color:'#07090D', fontSize:15, fontWeight:600, fontFamily:"'DM Sans',sans-serif",
+                  boxShadow:`0 0 32px ${s.energy}40`,
+                }}
+              >Продолжить →</button>
+              <button
+                onClick={handleStartFresh}
+                style={{
+                  width:'100%', padding:'14px', borderRadius:999, cursor:'pointer',
+                  background:'transparent', border:'1px solid rgba(255,255,255,0.12)',
+                  color:s.dim, fontSize:14, fontFamily:"'DM Sans',sans-serif",
+                }}
+              >Начать заново</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Header ── */}
       <header style={{
