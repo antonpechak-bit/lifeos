@@ -38,19 +38,27 @@ export default function Home() {
     if (!email.trim()) return
     setLoading(true)
     setError('')
-    const { error: err } = await supabase.auth.signInWithOtp({
-      email: email.trim(),
-      options: {
-        data: { name: name.trim() || null },
-        shouldCreateUser: true,
+    try {
+      const { error: err } = await Promise.race([
+        supabase.auth.signInWithOtp({
+          email: email.trim(),
+          options: { data: { name: name.trim() || null }, shouldCreateUser: true },
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000)),
+      ])
+      if (err) {
+        setError(err.message)
+      } else {
+        setSent(true)
+        setTimeout(() => codeRef.current?.focus(), 100)
       }
-    })
-    setLoading(false)
-    if (err) {
-      setError(err.message)
-    } else {
-      setSent(true)
-      setTimeout(() => codeRef.current?.focus(), 100)
+    } catch (e) {
+      console.error('sendCode error:', e)
+      setError(e?.message === 'timeout'
+        ? 'Сервер не отвечает. Попробуй ещё раз.'
+        : 'Проблема с соединением. Проверь интернет и попробуй снова.')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -58,19 +66,27 @@ export default function Home() {
     if (code.trim().length !== 6) return
     setVerifying(true)
     setError('')
-    const { error: err } = await supabase.auth.verifyOtp({
-      email: email.trim(),
-      token: code.trim(),
-      type: 'email',
-    })
-    setVerifying(false)
-    if (err) {
-      setError(err.message === 'Token has expired or is invalid'
-        ? 'Код неверный или устарел. Запроси новый.'
-        : err.message)
+    try {
+      const { error: err } = await Promise.race([
+        supabase.auth.verifyOtp({ email: email.trim(), token: code.trim(), type: 'email' }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000)),
+      ])
+      if (err) {
+        setError(err.message === 'Token has expired or is invalid'
+          ? 'Код неверный или устарел. Запроси новый.'
+          : err.message)
+        setCode('')
+      } else {
+        router.push('/dashboard')
+      }
+    } catch (e) {
+      console.error('verifyOtp error:', e)
+      setError(e?.message === 'timeout'
+        ? 'Сервер не отвечает. Попробуй ещё раз.'
+        : 'Проблема с соединением. Проверь интернет и попробуй снова.')
       setCode('')
-    } else {
-      router.push('/dashboard')
+    } finally {
+      setVerifying(false)
     }
   }
 
