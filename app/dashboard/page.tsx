@@ -532,6 +532,7 @@ export default function Dashboard() {
   const [checkins, setCheckins]       = useState([])
   const [activeCycle, setActiveCycle] = useState(null)
   const [loading, setLoading]         = useState(true)
+  const [loadError, setLoadError]     = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [driftSignal, setDriftSignal] = useState(null)
 
@@ -551,6 +552,19 @@ export default function Dashboard() {
         const weekStr  = weekAgo.toISOString().split('T')[0]
         const monthStr = monthAgo.toISOString().split('T')[0]
 
+        const loadResults = await Promise.race([
+          Promise.all([
+            supabase.from('sessions').select('*').eq('user_id', u.id).order('created_at', { ascending: false }),
+            supabase.from('sprints').select('*').eq('user_id', u.id).eq('status','active').order('created_at', { ascending: false }),
+            supabase.from('daily_logs').select('*').eq('user_id', u.id).gte('date', weekStr).order('date'),
+            supabase.from('checkins').select('*').eq('user_id', u.id).gte('date', weekStr),
+            supabase.from('daily_logs').select('date,steps,workout_minutes,workout_type,vo2max').eq('user_id', u.id).gte('date', monthStr).order('date'),
+            supabase.from('workouts').select('date,workout_type,minutes').eq('user_id', u.id).gte('date', monthStr).order('date'),
+            supabase.from('cycles').select('id, started_at, target_days').eq('user_id', u.id).eq('status', 'active').order('started_at', { ascending: false }).limit(1),
+          ]),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('load_timeout')), 10000)),
+        ])
+
         const [
           { data: sess },
           { data: spr },
@@ -559,15 +573,7 @@ export default function Dashboard() {
           { data: mLogs },
           { data: wkts },
           { data: cycleData },
-        ] = await Promise.all([
-          supabase.from('sessions').select('*').eq('user_id', u.id).order('created_at', { ascending: false }),
-          supabase.from('sprints').select('*').eq('user_id', u.id).eq('status','active').order('created_at', { ascending: false }),
-          supabase.from('daily_logs').select('*').eq('user_id', u.id).gte('date', weekStr).order('date'),
-          supabase.from('checkins').select('*').eq('user_id', u.id).gte('date', weekStr),
-          supabase.from('daily_logs').select('date,steps,workout_minutes,workout_type,vo2max').eq('user_id', u.id).gte('date', monthStr).order('date'),
-          supabase.from('workouts').select('date,workout_type,minutes').eq('user_id', u.id).gte('date', monthStr).order('date'),
-          supabase.from('cycles').select('id, started_at, target_days').eq('user_id', u.id).eq('status', 'active').order('started_at', { ascending: false }).limit(1),
-        ])
+        ] = loadResults
 
         const { data: todayLogData } = await supabase
           .from('daily_logs').select('*').eq('user_id', u.id).eq('date', today).maybeSingle()
@@ -593,7 +599,11 @@ export default function Dashboard() {
             .catch(() => {})
         })
       } catch (e) {
-        console.error('Dashboard load error:', e)
+        if (e?.message === 'load_timeout') {
+          setLoadError(true)
+        } else {
+          console.error('Dashboard load error:', e)
+        }
       } finally {
         setLoading(false)
       }
@@ -611,6 +621,31 @@ export default function Dashboard() {
     <div style={{ minHeight:'100vh', background:s.bg, display:'flex', alignItems:'center', justifyContent:'center' }}>
       <div style={{ width:28, height:28, borderRadius:'50%', border:'2px solid rgba(255,255,255,0.08)', borderTop:`2px solid ${s.energy}`, animation:'spin 0.8s linear infinite' }} />
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  )
+
+  // ── Load error state (timeout or network) ──────────────────
+  if (loadError) return (
+    <div style={{ minHeight:'100vh', background:s.bg, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:20, padding:24 }}>
+      <style>{`@keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      <div style={{ animation:'fadeUp 0.35s ease forwards', textAlign:'center' }}>
+        <div style={{ fontSize:32, marginBottom:16 }}>⚡</div>
+        <div style={{ fontSize:17, fontWeight:500, color:s.text, marginBottom:10 }}>Не удалось загрузить данные</div>
+        <div style={{ fontSize:14, color:s.dim, lineHeight:1.7, marginBottom:28, maxWidth:300 }}>
+          Сервер не ответил вовремя. Проверь соединение и попробуй снова.
+        </div>
+        <button
+          onClick={() => window.location.reload()}
+          style={{
+            padding:'13px 32px', borderRadius:999, border:'none', cursor:'pointer',
+            background:`linear-gradient(135deg,${s.energy} 0%,${s.mindfulness} 100%)`,
+            color:'#07090D', fontSize:14, fontWeight:600, fontFamily:"'DM Sans',sans-serif",
+            boxShadow:`0 0 32px ${s.energy}40`,
+          }}
+        >
+          Обновить →
+        </button>
+      </div>
     </div>
   )
 
