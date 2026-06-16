@@ -303,11 +303,6 @@ function ChatContent() {
   async function startNewSession(userId: string) {
     if (creatingRef.current) return
     creatingRef.current = true
-    // TEMP DEBUG — remove after diagnosis
-    const { data: { user: authUser } } = await supabase.auth.getUser()
-    const { data: { session: authSess } } = await supabase.auth.getSession()
-    const match = userId === authUser?.id
-    const hasSession = !!authSess
     const { data: newSess, error: insertError } = await supabase
       .from('sessions')
       .insert({ user_id: userId, messages: [], completed: false, current_layer: 0 })
@@ -316,8 +311,20 @@ function ChatContent() {
     creatingRef.current = false
     if (insertError || !newSess?.id) {
       // TEMP DEBUG
+      const { data: au } = await supabase.auth.getUser()
+      const { data: se } = await supabase.auth.getSession()
+      alert(
+        'DEBUG createSession\n' +
+        'code: ' + (insertError?.code || 'none') + '\n' +
+        'msg: ' + (insertError?.message || 'none') + '\n' +
+        'authId: ' + (au?.user?.id || 'null') + '\n' +
+        'userId: ' + userId + '\n' +
+        'match: ' + (au?.user?.id === userId) + '\n' +
+        'hasSession: ' + !!se?.session + '\n' +
+        'token (first 20): ' + (se?.session?.access_token?.slice(0,20) || 'none')
+      )
       setInitErrorDetails(
-        `code=${insertError?.code ?? 'none'} | match=${match} | hasSession=${hasSession} | authId=${authUser?.id ?? 'null'} | userId=${userId}\n${insertError?.message ?? 'no data returned'}`
+        `code=${insertError?.code ?? 'none'} | match=${au?.user?.id === userId} | hasSession=${!!se?.session} | authId=${au?.user?.id ?? 'null'} | userId=${userId}\n${insertError?.message ?? 'no data returned'}`
       )
       throw new Error(insertError?.message || 'Session creation failed')
     }
