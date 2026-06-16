@@ -142,7 +142,7 @@ export default function Home() {
         <div style={{ display:'flex', justifyContent:'center', gap:32, marginBottom:44 }}>
           {[
             { n: '7',     l: 'слоёв',    color: s.energy },
-            { n: '40–50', l: 'минут',    color: s.mindfulness },
+            { n: '—',     l: 'разговор', color: s.mindfulness },
             { n: '1',     l: 'State Map', color: s.recovery },
           ].map(({ n, l, color }) => (
             <div key={l} style={{ textAlign:'center' }}>
