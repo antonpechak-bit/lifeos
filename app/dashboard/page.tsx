@@ -547,6 +547,12 @@ export default function Dashboard() {
         const u = data.session.user
         setUser(u)
 
+        // Gate: no completed State Map → send to diagnostic chat
+        const { data: smCheck } = await supabase
+          .from('sessions').select('id')
+          .eq('user_id', u.id).not('state_map', 'is', null).limit(1)
+        if (!smCheck?.length) { router.replace('/chat'); return }
+
         const weekAgo  = new Date(); weekAgo.setDate(weekAgo.getDate() - 7)
         const monthAgo = new Date(); monthAgo.setDate(monthAgo.getDate() - 30)
         const weekStr  = weekAgo.toISOString().split('T')[0]
