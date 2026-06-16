@@ -198,6 +198,7 @@ function ChatContent() {
   const [resumeOption, setResumeOption] = useState<{id: string; updatedAt: string} | null>(null)
   const [initError, setInitError] = useState(false)
   const [retryTrigger, setRetryTrigger] = useState(0)
+  const [initErrorDetails, setInitErrorDetails] = useState('') // TEMP DEBUG
 
   // ── Init: create session or offer resume when no ?session= in URL ──
   useEffect(() => {
@@ -302,6 +303,11 @@ function ChatContent() {
   async function startNewSession(userId: string) {
     if (creatingRef.current) return
     creatingRef.current = true
+    // TEMP DEBUG — remove after diagnosis
+    const { data: { user: authUser } } = await supabase.auth.getUser()
+    const { data: { session: authSess } } = await supabase.auth.getSession()
+    const match = userId === authUser?.id
+    const hasSession = !!authSess
     const { data: newSess, error: insertError } = await supabase
       .from('sessions')
       .insert({ user_id: userId, messages: [], completed: false, current_layer: 0 })
@@ -309,6 +315,10 @@ function ChatContent() {
       .single()
     creatingRef.current = false
     if (insertError || !newSess?.id) {
+      // TEMP DEBUG
+      setInitErrorDetails(
+        `code=${insertError?.code ?? 'none'} | match=${match} | hasSession=${hasSession} | authId=${authUser?.id ?? 'null'} | userId=${userId}\n${insertError?.message ?? 'no data returned'}`
+      )
       throw new Error(insertError?.message || 'Session creation failed')
     }
     router.replace(`/chat?session=${newSess.id}`)
@@ -348,7 +358,7 @@ function ChatContent() {
             Проверь соединение и попробуй снова.
           </div>
           <button
-            onClick={() => { setInitError(false); setRetryTrigger(t => t + 1) }}
+            onClick={() => { setInitError(false); setInitErrorDetails(''); setRetryTrigger(t => t + 1) }}
             style={{
               padding:'13px 32px', borderRadius:999, border:'none', cursor:'pointer',
               background:`linear-gradient(135deg,${s.energy} 0%,${s.mindfulness} 100%)`,
@@ -356,6 +366,12 @@ function ChatContent() {
               boxShadow:`0 0 32px ${s.energy}40`,
             }}
           >Попробовать снова →</button>
+          {/* TEMP DEBUG — remove after diagnosis */}
+          {initErrorDetails && (
+            <div style={{ marginTop:20, fontSize:11, color:'rgba(255,90,90,0.8)', fontFamily:'monospace', whiteSpace:'pre-wrap', maxWidth:340, wordBreak:'break-all', textAlign:'left', background:'rgba(255,90,90,0.07)', border:'1px solid rgba(255,90,90,0.2)', borderRadius:10, padding:'10px 12px' }}>
+              {initErrorDetails}
+            </div>
+          )}
         </div>
       </div>
     )
