@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
-import { SYSTEM_PROMPT } from '@/lib/prompts'
+import { buildSystemPrompt } from '@/lib/prompts'
 import { createClient } from '@supabase/supabase-js'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
@@ -20,7 +20,7 @@ const supabaseAdmin = createClient(
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, sessionId } = await req.json()
+    const { messages, sessionId, prevStateMap } = await req.json()
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json({ error: 'Invalid messages' }, { status: 400 })
     }
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
       response = await anthropic.messages.create({
         model: 'claude-sonnet-4-5',
         max_tokens: 2048,
-        system: SYSTEM_PROMPT,
+        system: buildSystemPrompt(prevStateMap),
         messages,
       })
     } catch (aiError) {

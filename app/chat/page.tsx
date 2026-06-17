@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase, Message } from '@/lib/supabase'
-import { LAYERS, OPENING_MESSAGE } from '@/lib/prompts'
+import { LAYERS, OPENING_MESSAGE, REOPENING_MESSAGE } from '@/lib/prompts'
 import { VoiceButton } from '@/lib/VoiceButton'
 
 // ── Design tokens ──────────────────────────────────────────────
@@ -199,7 +199,8 @@ function ChatContent() {
   const [resumeOption, setResumeOption] = useState<{id: string; updatedAt: string} | null>(null)
   const [initError, setInitError] = useState(false)
   const [retryTrigger, setRetryTrigger] = useState(0)
-  const [initErrorDetails, setInitErrorDetails] = useState('') // TEMP DEBUG
+  const [initErrorDetails, setInitErrorDetails] = useState('')
+  const [prevStateMap, setPrevStateMap] = useState<string | null>(null)
 
   // ── Init: create session or offer resume when no ?session= in URL ──
   useEffect(() => {
@@ -216,6 +217,23 @@ function ChatContent() {
         }
         const u = authData.session.user
 
+        // Check for previous completed State Map → determines opening message mode
+        const { data: completed } = await supabase
+          .from('sessions')
+          .select('state_map')
+          .eq('user_id', u.id)
+          .eq('completed', true)
+          .not('state_map', 'is', null)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+
+        const latestStateMap = completed?.[0]?.state_map ?? null
+        if (latestStateMap) {
+          setPrevStateMap(latestStateMap)
+          setMessages([{ role: 'assistant', content: REOPENING_MESSAGE }])
+        }
+
+        // Check for existing incomplete session to offer resume
         const { data: existing } = await supabase
           .from('sessions')
           .select('id, updated_at, messages')
@@ -280,7 +298,7 @@ function ChatContent() {
           'Content-Type': 'application/json',
           ...(authSess?.access_token && { 'Authorization': `Bearer ${authSess.access_token}` }),
         },
-        body: JSON.stringify({ messages: newMessages, sessionId }),
+        body: JSON.stringify({ messages: newMessages, sessionId, prevStateMap }),
       })
       const data = await res.json()
       const reply = data.reply || 'Что-то пошло не так.'
