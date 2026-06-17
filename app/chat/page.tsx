@@ -1,7 +1,7 @@
 // @ts-nocheck
 'use client'
 import { useEffect, useRef, useState, Suspense } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase, Message } from '@/lib/supabase'
 import { LAYERS, OPENING_MESSAGE } from '@/lib/prompts'
 import { VoiceButton } from '@/lib/VoiceButton'
@@ -182,6 +182,7 @@ function StateMapCard({ raw, sessionId }: { raw: string; sessionId: string | nul
 
 // ── Chat ───────────────────────────────────────────────────────
 function ChatContent() {
+  const router = useRouter()
   const params = useSearchParams()
   const sessionId = params.get('session')
   const [messages, setMessages] = useState<Message[]>([
@@ -210,23 +211,18 @@ function ChatContent() {
       try {
         const { data: authData } = await supabase.auth.getSession()
         if (!authData?.session) {
-          alert('DEBUG init: no auth session → redirecting to /')
           router.replace('/')
           return
         }
         const u = authData.session.user
 
-        const { data: existing, error: selectErr } = await supabase
+        const { data: existing } = await supabase
           .from('sessions')
           .select('id, updated_at, messages')
           .eq('user_id', u.id)
           .eq('completed', false)
           .order('updated_at', { ascending: false })
           .limit(1)
-
-        if (selectErr) {
-          alert('DEBUG init: SELECT sessions failed\ncode: ' + selectErr.code + '\nmsg: ' + selectErr.message)
-        }
 
         const found = existing?.[0]
         const hasConversation = found && Array.isArray(found.messages) && found.messages.length > 1
@@ -236,10 +232,8 @@ function ChatContent() {
         } else {
           await startNewSession(u.id)
         }
-      } catch (e: any) {
+      } catch (e) {
         console.error('Chat init error:', e)
-        // TEMP DEBUG — catch-all so we see what threw
-        alert('DEBUG init catch-all\n' + (e?.message || String(e)))
         initRef.current = false
         setInitError(true)
       }
@@ -308,47 +302,18 @@ function ChatContent() {
   }
 
   async function startNewSession(userId: string) {
-    if (creatingRef.current) {
-      alert('DEBUG startNewSession: creatingRef already true, bailing early')
-      return
-    }
+    if (creatingRef.current) return
     creatingRef.current = true
-
-    let newSess: any = null
-    let insertError: any = null
-    try {
-      const res = await supabase
-        .from('sessions')
-        .insert({ user_id: userId, messages: [], completed: false, current_layer: 0 })
-        .select('id')
-        .single()
-      newSess = res.data
-      insertError = res.error
-    } catch (e: any) {
-      alert('DEBUG startNewSession: INSERT threw exception\n' + (e?.message || String(e)))
-      creatingRef.current = false
-      throw e
-    }
-
+    const { data: newSess, error: insertError } = await supabase
+      .from('sessions')
+      .insert({ user_id: userId, messages: [], completed: false, current_layer: 0 })
+      .select('id')
+      .single()
     creatingRef.current = false
-
     if (insertError || !newSess?.id) {
-      // TEMP DEBUG
-      const { data: au } = await supabase.auth.getUser()
-      const { data: se } = await supabase.auth.getSession()
-      console.error('SESSION INSERT DEBUG', insertError, userId)
-      alert(
-        'DEBUG SESSION INSERT\n' +
-        'error code: ' + (insertError?.code || 'none') + '\n' +
-        'error msg: ' + (insertError?.message || 'none') + '\n' +
-        'authId: ' + (au?.user?.id || 'NULL') + '\n' +
-        'userId passed: ' + (userId || 'NULL') + '\n' +
-        'match: ' + (au?.user?.id === userId) + '\n' +
-        'hasSession: ' + !!se?.session + '\n' +
-        'token start: ' + (se?.session?.access_token?.slice(0,15) || 'NONE')
-      )
+      console.error('SESSION INSERT ERROR', insertError, userId)
       setInitErrorDetails(
-        `code=${insertError?.code ?? 'none'} | match=${au?.user?.id === userId} | hasSession=${!!se?.session} | authId=${au?.user?.id ?? 'null'} | userId=${userId}\n${insertError?.message ?? 'no data returned'}`
+        `code=${insertError?.code ?? 'none'} | userId=${userId}\n${insertError?.message ?? 'no data returned'}`
       )
       throw new Error(insertError?.message || 'Session creation failed')
     }
