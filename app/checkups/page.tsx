@@ -405,9 +405,13 @@ function CheckupsContent() {
         const base64 = e.target.result.split(',')[1]
         const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
         const mediaType = isPdf ? 'application/pdf' : (file.type || 'image/jpeg')
+        const { data: { session: authSess } } = await supabase.auth.getSession()
         const res = await fetch('/api/parse-labs', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(authSess?.access_token && { 'Authorization': `Bearer ${authSess.access_token}` }),
+          },
           body: JSON.stringify({ fileBase64: base64, mediaType }),
         })
         const data = await res.json()

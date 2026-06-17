@@ -486,6 +486,7 @@ function BottomNav({ router }) {
     { icon: '📊', label: 'Инсайты',   route: '/dashboard/insights' },
     { icon: '💬', label: 'Ассистент', route: '/assistant' },
     { icon: '🩺', label: 'Чекапы',    route: '/checkups' },
+    { icon: '💭', label: 'Чат',       route: '/chat' },
   ]
   const current = typeof window !== 'undefined' ? window.location.pathname : ''
   return (
@@ -912,8 +913,8 @@ export default function Dashboard() {
                     <button onClick={() => router.push('/dashboard/priorities')} style={{ fontSize:12, color:s.mindfulness, background:'rgba(177,141,255,0.1)', border:'1px solid rgba(177,141,255,0.22)', borderRadius:999, padding:'5px 14px', cursor:'pointer' }}>
                       Приоритеты
                     </button>
-                    <button onClick={() => router.push('/chat')} style={{ fontSize:12, color:s.muted, background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.09)', borderRadius:999, padding:'5px 14px', cursor:'pointer' }}>
-                      Обновить
+                    <button onClick={() => router.push('/chat')} style={{ fontSize:12, color:s.mindfulness, background:'rgba(177,141,255,0.1)', border:'1px solid rgba(177,141,255,0.25)', borderRadius:999, padding:'5px 14px', cursor:'pointer' }}>
+                      Новый разговор →
                     </button>
                   </div>
                 </div>
