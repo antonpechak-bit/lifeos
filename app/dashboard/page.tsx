@@ -531,7 +531,8 @@ export default function Dashboard() {
   const [monthLogs, setMonthLogs]     = useState([])
   const [workouts, setWorkouts]       = useState([])
   const [checkins, setCheckins]       = useState([])
-  const [activeCycle, setActiveCycle] = useState(null)
+  const [activeCycle, setActiveCycle]         = useState(null)
+  const [completedSprints, setCompletedSprints] = useState([])
   const [loading, setLoading]         = useState(true)
   const [loadError, setLoadError]     = useState(false)
   const [showHistory, setShowHistory] = useState(false)
@@ -568,6 +569,7 @@ export default function Dashboard() {
             supabase.from('daily_logs').select('date,steps,workout_minutes,workout_type,vo2max').eq('user_id', u.id).gte('date', monthStr).order('date'),
             supabase.from('workouts').select('date,workout_type,minutes').eq('user_id', u.id).gte('date', monthStr).order('date'),
             supabase.from('cycles').select('id, started_at, target_days').eq('user_id', u.id).eq('status', 'active').order('started_at', { ascending: false }).limit(1),
+            supabase.from('sprints').select('id,layer,behavior_name,created_at').eq('user_id', u.id).eq('status','completed').order('created_at', { ascending: false }).limit(5),
           ]),
           new Promise((_, reject) => setTimeout(() => reject(new Error('load_timeout')), 10000)),
         ])
@@ -580,6 +582,7 @@ export default function Dashboard() {
           { data: mLogs },
           { data: wkts },
           { data: cycleData },
+          { data: completedSpr },
         ] = loadResults
 
         const { data: todayLogData } = await supabase
@@ -593,6 +596,7 @@ export default function Dashboard() {
         setTodayLog(todayLogData || null)
         setCheckins(checkData || [])
         setActiveCycle(cycleData?.[0] || null)
+        setCompletedSprints(completedSpr || [])
 
         // Drift signal — non-blocking, loads after main data
         supabase.auth.getSession().then(({ data: sd }) => {
@@ -673,7 +677,8 @@ export default function Dashboard() {
       return { name: parts[0], why: parts[1] }
     }) || []
 
-  const hasDimData        = todayLog && (todayLog.energy || todayLog.mood || todayLog.meaning || todayLog.connection)
+  const hasCompletedHistory = completedSprints.length > 0
+  const hasDimData          = todayLog && (todayLog.energy || todayLog.mood || todayLog.meaning || todayLog.connection)
   const activityAnalysis  = analyzeActivity(monthLogs, workouts)
 
   const wellbeingIndex = todayLog?.wellbeing_index
@@ -1004,7 +1009,8 @@ export default function Dashboard() {
               </div>
             )}
 
-            {activeSprints.length === 0 && (
+            {/* ── NO ACTIVE SPRINTS: FIRST-TIME ─────────────── */}
+            {activeSprints.length === 0 && !hasCompletedHistory && (
               <div style={{
                 background: 'linear-gradient(155deg,rgba(177,141,255,0.1) 0%,rgba(255,255,255,0.025) 100%)',
                 backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
@@ -1034,6 +1040,64 @@ export default function Dashboard() {
                   }}>
                     Выбрать приоритет →
                   </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── NO ACTIVE SPRINTS: CYCLE COMPLETED → FORK ─── */}
+            {activeSprints.length === 0 && hasCompletedHistory && (
+              <div style={{
+                background: 'linear-gradient(155deg,rgba(177,141,255,0.08) 0%,rgba(255,255,255,0.02) 100%)',
+                backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
+                borderRadius: 32, padding: '28px 24px',
+                border: '1px solid rgba(177,141,255,0.18)',
+                position: 'relative', overflow: 'hidden',
+                boxShadow: '0 0 60px rgba(177,141,255,0.07),0 20px 60px rgba(0,0,0,0.25)',
+                animation: 'fadeUp 0.75s ease forwards',
+              }}>
+                <div style={{ position:'absolute', top:-40, right:-40, width:200, height:200, borderRadius:'50%', background:'radial-gradient(circle,rgba(177,141,255,0.12) 0%,transparent 65%)', animation:'glowPulse 7s ease-in-out infinite', pointerEvents:'none' }} />
+                <div style={{ position:'relative', zIndex:1 }}>
+                  <div style={{ fontSize:11, color:s.mindfulness, opacity:0.75, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:14 }}>
+                    Цикл завершён
+                  </div>
+                  <div style={{ fontSize:17, fontWeight:500, color:s.text, lineHeight:1.55, marginBottom:16 }}>
+                    Что чувствуешь — хочется углубить то, над чем работал, или посмотреть, не сместилось ли важное?
+                  </div>
+
+                  {completedSprints.length > 0 && (
+                    <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:20 }}>
+                      {completedSprints.slice(0,3).map((sp, i) => (
+                        <div key={i} style={{
+                          fontSize:11, borderRadius:999, padding:'4px 12px',
+                          background:'rgba(177,141,255,0.07)', border:'1px solid rgba(177,141,255,0.15)',
+                          color:s.muted,
+                        }}>
+                          {sp.behavior_name}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                    <button onClick={() => router.push('/dashboard/priorities?context=continue')} style={{
+                      width:'100%', padding:'15px 18px', borderRadius:18, cursor:'pointer',
+                      background:`linear-gradient(135deg,rgba(177,141,255,0.18) 0%,rgba(106,168,255,0.1) 100%)`,
+                      border:'1px solid rgba(177,141,255,0.3)',
+                      textAlign:'left',
+                    }}>
+                      <div style={{ fontSize:14, fontWeight:600, color:s.mindfulness, marginBottom:3 }}>Продолжить — те же слои</div>
+                      <div style={{ fontSize:12, color:s.muted, lineHeight:1.4 }}>Углубить то, над чем уже работал, создать новый спринт</div>
+                    </button>
+                    <button onClick={() => router.push('/chat')} style={{
+                      width:'100%', padding:'15px 18px', borderRadius:18, cursor:'pointer',
+                      background:'rgba(255,255,255,0.04)',
+                      border:'1px solid rgba(255,255,255,0.09)',
+                      textAlign:'left',
+                    }}>
+                      <div style={{ fontSize:14, fontWeight:600, color:s.dim, marginBottom:3 }}>Пересмотреть карту состояния</div>
+                      <div style={{ fontSize:12, color:s.muted, lineHeight:1.4 }}>Повторная диагностика — вдруг сместилось важное</div>
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
