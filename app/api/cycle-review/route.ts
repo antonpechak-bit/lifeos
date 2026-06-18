@@ -325,8 +325,8 @@ export async function POST(req: NextRequest) {
       layer_updates: layerUpdates,
       sprint_count: sprints.length,
     })
-  } catch (error) {
-    console.error('Cycle review error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  } catch (error: any) {
+    console.error('Cycle review error — name:', error?.name, '| message:', error?.message, '| stack:', error?.stack)
+    return NextResponse.json({ error: 'Internal server error', details: error?.message }, { status: 500 })
   }
 }

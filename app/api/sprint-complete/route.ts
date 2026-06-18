@@ -100,13 +100,13 @@ export async function POST(req: NextRequest) {
       .eq('user_id', userId)
 
     if (updateError) {
-      console.error('Sprint update error:', updateError)
-      return NextResponse.json({ error: 'Failed to complete sprint' }, { status: 500 })
+      console.error('Sprint update error — code:', updateError.code, '| message:', updateError.message, '| details:', updateError.details, '| hint:', updateError.hint)
+      return NextResponse.json({ error: 'Failed to complete sprint', details: updateError.message }, { status: 500 })
     }
 
     return NextResponse.json({ success: true, reflection_summary, success_count, total_days })
-  } catch (error) {
-    console.error('Sprint complete error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  } catch (error: any) {
+    console.error('Sprint complete error — name:', error?.name, '| message:', error?.message, '| stack:', error?.stack)
+    return NextResponse.json({ error: 'Internal server error', details: error?.message }, { status: 500 })
   }
 }

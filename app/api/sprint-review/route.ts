@@ -30,7 +30,7 @@ function buildSystemPrompt(sprint: any, checkins: any[], ctx: any): string {
   const now = new Date()
 
   // Layers with status=stable and last_checked > 30 days ago (or never)
-  const staleLayers = ctx.layer_statuses.filter((ls: any) => {
+  const staleLayers = (ctx.layer_statuses || []).filter((ls: any) => {
     if (ls.status !== 'stable') return false
     if (!ls.last_checked) return true
     const days = Math.round((now.getTime() - new Date(ls.last_checked).getTime()) / 86400000)
@@ -244,8 +244,8 @@ export async function POST(req: NextRequest) {
       insights: savedInsights,
       layer_updates: layerUpdates,
     })
-  } catch (error) {
-    console.error('Sprint review error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  } catch (error: any) {
+    console.error('Sprint review error — name:', error?.name, '| message:', error?.message, '| stack:', error?.stack)
+    return NextResponse.json({ error: 'Internal server error', details: error?.message }, { status: 500 })
   }
 }

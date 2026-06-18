@@ -120,7 +120,7 @@ export async function POST(req: NextRequest) {
           .eq('id', sprint.id)
           .eq('user_id', userId)
 
-        if (error) console.error(`Failed to complete sprint ${sprint.id}:`, error)
+        if (error) console.error(`Failed to complete sprint ${sprint.id} — code: ${error.code} | message: ${error.message} | details: ${error.details}`)
 
         return {
           id: sprint.id,
@@ -137,8 +137,8 @@ export async function POST(req: NextRequest) {
       reflection_summary,
       completed_sprints: completedSprints,
     })
-  } catch (error) {
-    console.error('Cycle complete error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  } catch (error: any) {
+    console.error('Cycle complete error — name:', error?.name, '| message:', error?.message, '| stack:', error?.stack)
+    return NextResponse.json({ error: 'Internal server error', details: error?.message }, { status: 500 })
   }
 }
