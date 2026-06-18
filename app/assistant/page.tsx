@@ -115,6 +115,7 @@ function AssistantContent() {
   const [sending, setSending] = useState(false)
   const [contextSummary, setContextSummary] = useState(null)
   const [lastFailedMsg, setLastFailedMsg] = useState(null)
+  const [conversationMode, setConversationMode] = useState('analysis')
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
 
@@ -164,6 +165,7 @@ function AssistantContent() {
           message: msg,
           history: historyForApi,
           userId: user.id,
+          mode: conversationMode,
         }),
       })
 
@@ -196,6 +198,76 @@ function AssistantContent() {
     }
     setSending(false)
     setTimeout(() => inputRef.current?.focus(), 100)
+  }
+
+  async function startStateNow() {
+    if (!user || sending) return
+    setConversationMode('state_now')
+    setSending(true)
+    setLastFailedMsg(null)
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const accessToken = sessionData?.session?.access_token ?? ''
+      const res = await fetch('/api/deep-analysis', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          message: '[STATE_NOW_INIT]',
+          history: [],
+          userId: user.id,
+          mode: 'state_now',
+        }),
+      })
+      if (!res.ok) {
+        setMessages([{ role: 'error', content: `Ошибка сервера (${res.status})` }])
+      } else {
+        const data = await res.json()
+        if (data.context_summary) setContextSummary(data.context_summary)
+        setMessages([{ role: 'assistant', content: data.text || 'Как ты сейчас?' }])
+      }
+    } catch(e) {
+      console.error(e)
+      setMessages([{ role: 'error', content: 'Ошибка соединения.' }])
+    }
+    setSending(false)
+  }
+
+  async function startGuidedCheckin() {
+    if (!user || sending) return
+    setConversationMode('guided_checkin')
+    setSending(true)
+    setLastFailedMsg(null)
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const accessToken = sessionData?.session?.access_token ?? ''
+      const res = await fetch('/api/deep-analysis', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          message: '[GUIDED_CHECKIN_INIT]',
+          history: [],
+          userId: user.id,
+          mode: 'guided_checkin',
+        }),
+      })
+      if (!res.ok) {
+        setMessages([{ role: 'error', content: `Ошибка сервера (${res.status})` }])
+      } else {
+        const data = await res.json()
+        if (data.context_summary) setContextSummary(data.context_summary)
+        setMessages([{ role: 'assistant', content: data.text || 'Как ты сейчас?' }])
+      }
+    } catch(e) {
+      console.error(e)
+      setMessages([{ role: 'error', content: 'Ошибка соединения.' }])
+    }
+    setSending(false)
   }
 
   function retry() {
@@ -276,6 +348,36 @@ function AssistantContent() {
                   Могу найти связи между ними и предложить фокус.
                 </div>
               </div>
+            </div>
+
+            {/* AI-led: state now */}
+            <div style={{ maxWidth: 480, margin: '0 auto 12px' }}>
+              <button onClick={startStateNow} disabled={sending} style={{
+                width: '100%', padding: '16px 20px', borderRadius: 20,
+                background: 'linear-gradient(155deg,rgba(177,141,255,0.13) 0%,rgba(177,141,255,0.04) 100%)',
+                backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+                border: '1px solid rgba(177,141,255,0.22)',
+                cursor: sending ? 'default' : 'pointer', opacity: sending ? 0.5 : 1,
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14,
+                transition: 'all 0.15s',
+              }}
+                onMouseEnter={e => { if (!sending) { e.currentTarget.style.borderColor = 'rgba(177,141,255,0.4)'; e.currentTarget.style.background = 'linear-gradient(155deg,rgba(177,141,255,0.2) 0%,rgba(177,141,255,0.07) 100%)' }}}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(177,141,255,0.22)'; e.currentTarget.style.background = 'linear-gradient(155deg,rgba(177,141,255,0.13) 0%,rgba(177,141,255,0.04) 100%)' }}>
+                <div style={{ textAlign: 'left' }}>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: s.mindfulness, marginBottom: 3 }}>Как я сейчас</div>
+                  <div style={{ fontSize: 12, color: s.muted, lineHeight: 1.4 }}>ИИ проведёт по слоям сам — опираясь на State Map</div>
+                </div>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={s.mindfulness} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: 0.7 }}>
+                  <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Divider */}
+            <div style={{ maxWidth: 480, margin: '0 auto 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} />
+              <span style={{ fontSize: 11, color: s.muted, letterSpacing: '0.03em' }}>или задай вопрос сам</span>
+              <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} />
             </div>
 
             {/* Starter prompt glass pills */}
