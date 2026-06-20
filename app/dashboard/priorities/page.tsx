@@ -192,7 +192,9 @@ function PrioritiesContent() {
         body: JSON.stringify({
           messages: newMessages,
           stateMap: session?.state_map,
-          priority: activePri ? `${activePri.name}: ${activePri.why}` : '',
+          priority: activePri
+            ? `${activePri.name} [слой: ${LAYER_LABELS[guessLayer(activePri.name)] || guessLayer(activePri.name)}]\nПочему важно: ${activePri.why}${activePri.step ? `\nПредложенный шаг: ${activePri.step}` : ''}`
+            : '',
           sessionId: session?.id,
           userId: user?.id,
         }),
