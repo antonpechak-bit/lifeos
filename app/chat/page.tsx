@@ -261,20 +261,54 @@ function ChatContent() {
 
   // ── Load existing session when ?session= is present ──
   useEffect(() => {
-    if (sessionId && !sessionLoaded) {
-      supabase.from('sessions').select('messages, current_layer').eq('id', sessionId).single()
-        .then(({ data }) => {
-          if (data?.messages?.length > 0) {
-            setMessages(data.messages)
-            setCurrentLayer(data.current_layer || 0)
+    if (!sessionId || sessionLoaded) return
+
+    async function loadSession() {
+      try {
+        const { data } = await supabase
+          .from('sessions')
+          .select('messages, current_layer')
+          .eq('id', sessionId)
+          .single()
+
+        if (data?.messages?.length > 0) {
+          setMessages(data.messages)
+          setCurrentLayer(data.current_layer || 0)
+        }
+
+        // Fetch previous completed state map for REOPENING context.
+        // Must run here — covers both direct URL access (?session=X) and
+        // post-router.replace remounts where the init() effect is skipped.
+        const { data: authData } = await supabase.auth.getSession()
+        const userId = authData?.session?.user?.id
+        if (userId) {
+          const { data: completed } = await supabase
+            .from('sessions')
+            .select('state_map')
+            .eq('user_id', userId)
+            .eq('completed', true)
+            .not('state_map', 'is', null)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+
+          const latestStateMap = completed?.[0]?.state_map ?? null
+          if (latestStateMap) {
+            setPrevStateMap(latestStateMap)
+            console.log('[REOPENING] prevStateMap loaded:', latestStateMap.length, 'chars')
+            // New/empty session → show reopening greeting (handles remount case)
+            if (!data?.messages?.length) {
+              setMessages([{ role: 'assistant', content: REOPENING_MESSAGE }])
+            }
           }
-          setSessionLoaded(true)
-        })
-        .catch(e => {
-          console.error('Session load error:', e)
-          setSessionLoaded(true)   // prevent retry loop
-        })
+        }
+      } catch (e) {
+        console.error('Session load error:', e)
+      } finally {
+        setSessionLoaded(true) // prevent retry loop
+      }
     }
+
+    loadSession()
   }, [sessionId, sessionLoaded])
 
   useEffect(() => {
@@ -292,6 +326,7 @@ function ChatContent() {
 
     try {
       const { data: { session: authSess } } = await supabase.auth.getSession()
+      console.log('[REOPENING] send() prevStateMap:', prevStateMap ? `${prevStateMap.length} chars` : 'null')
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: {
