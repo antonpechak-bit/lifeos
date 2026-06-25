@@ -227,7 +227,7 @@ ${cycleContext}`
           layer: get('LAYER'),
           behavior_name: get('NAME'),
           behavior_description: get('DESCRIPTION'),
-          anchor: get('ANCHOR'),
+          anchor: /^[—–-]$/.test(get('ANCHOR')) ? null : get('ANCHOR') || null,
           level: get('LEVEL'),
           target_days,
           started_at: today,

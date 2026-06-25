@@ -678,13 +678,13 @@ export default function Dashboard() {
     }) || []
 
   const hasCompletedHistory = completedSprints.length > 0
-  const hasDimData          = todayLog && (todayLog.energy || todayLog.mood || todayLog.meaning || todayLog.connection)
+  const hasDimData          = todayLog && (todayLog.energy != null || todayLog.mood != null || todayLog.meaning != null || todayLog.connection != null)
   const activityAnalysis  = analyzeActivity(monthLogs, workouts)
 
   const wellbeingIndex = todayLog?.wellbeing_index
     ? parseFloat(todayLog.wellbeing_index)
     : hasDimData
-      ? Object.keys(DIM).filter(k => todayLog[k]).reduce((sum, k, _, arr) => sum + todayLog[k] / arr.length, 0)
+      ? Object.keys(DIM).filter(k => todayLog[k] != null).reduce((sum, k, _, arr) => sum + todayLog[k] / arr.length, 0)
       : null
 
   const { label: stateLabel, sub: stateSub } = stateFromIndex(wellbeingIndex)
